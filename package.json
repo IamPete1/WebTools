@@ -1,0 +1,26 @@
+{
+  "name": "webtools",
+  "version": "1.0.0",
+  "description": "ArduPilot WebTools",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint ./"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArduPilot/WebTools.git"
+  },
+  "author": "https://github.com/ArduPilot/WebTools/graphs/contributors",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/ArduPilot/WebTools/issues"
+  },
+  "homepage": "https://github.com/ArduPilot/WebTools#readme",
+  "devDependencies": {
+    "eslint": "^8.51.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.28.1",
+    "eslint-plugin-n": "^16.2.0",
+    "eslint-plugin-promise": "^6.1.1"
+  }
+}
