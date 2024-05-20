@@ -109,15 +109,6 @@ function setup_plots() {
     for (const axi of axis) {
         mag_plot[axi].data = []
 
-        const name = "Expected"
-        mag_plot[axi].data[0] = { 
-            mode: "lines",
-            name: name,
-            meta: name,
-            line: { width: 4, color: "#000000" },
-            hovertemplate: gauss_hovertemplate
-        }
-
         mag_plot[axi].layout = {
             xaxis: {title: {text: time_scale_label }, zeroline: false, showline: true, mirror: true},
             yaxis: {title: {text: "Field " + axi + " (mGauss)" }, zeroline: false, showline: true, mirror: true },
@@ -402,10 +393,7 @@ function redraw() {
 
     // Expected field
     for (const axi of axis) {
-        mag_plot[axi].data = [ mag_plot[axi].data[0] ]
-
-        mag_plot[axi].data[0].x = source.quaternion.time
-        mag_plot[axi].data[0].y = source[axi]
+        mag_plot[axi].data = []
     }
     error_plot.data = [ error_plot.data[0] ]
     yaw_change.mag.data = [ yaw_change.mag.data[0] ]
@@ -419,12 +407,14 @@ function redraw() {
         if (MAG_Data[i] == null) {
             continue
         }
-        const name = "Mag " + (i + 1)
+        const name = String(i + 1)
+        const calibrated_name = name + " calibrated"
+        const expected_name = name + " expected"
         MAG_Data[i].param_selection = []
 
         function setup_plot(data, group_index, fit_name) {
             const show = data.show.checked
-            const index = mag_plot.x.data.length
+            const index = mag_plot.x.data.length / 2
             data.show.setAttribute('data-index', index)
 
             const group_name = fit_name
@@ -432,14 +422,27 @@ function redraw() {
             for (const axi of axis) {
                 mag_plot[axi].data.push({
                     mode: "lines",
-                    name: name,
-                    meta: name,
+                    name: calibrated_name,
+                    meta: calibrated_name,
                     visible: show,
                     legendgroup: group_index,
                     legendgrouptitle: { text: group_name },
                     hovertemplate: gauss_hovertemplate,
                     x: MAG_Data[i].time,
                     y: data[axi]
+                })
+
+                mag_plot[axi].data.push({
+                    mode: "lines",
+                    name: expected_name,
+                    meta: expected_name,
+                    visible: show,
+                    legendgroup: group_index,
+                    legendgrouptitle: { text: group_name },
+                    hovertemplate: gauss_hovertemplate,
+                    x: MAG_Data[i].time,
+                    y: data.expected[axi],
+                    line: { dash: "dot" },
                 })
             }
 
@@ -652,8 +655,10 @@ function update_hidden(ele) {
     const index = parseFloat(ele.dataset.index)
     const show = ele.checked
 
+    const axi_index = index * 2
     for (const axi of axis) {
-        mag_plot[axi].data[index].visible = show
+        mag_plot[axi].data[axi_index + 0].visible = show
+        mag_plot[axi].data[axi_index + 1].visible = show
         Plotly.redraw("mag_plot_" + axi)
     }
 
@@ -835,37 +840,19 @@ function array_wrap_2PI(A) {
 }
 
 // Calculate yaw estimate from compass only, tilt correction
-function get_yaw(mag_field, quaternion) {
+function get_yaw(mag_field, tilt_correction) {
     const len = mag_field.x.length
     const declination_rad = earth_field.declination * (Math.PI / 180)
 
     let yaw = new Array(len)
-    let quat = new Quaternion()
     for (let i = 0; i < len; i++) {
 
-        // Populate quaternion
-        quat.q1 = quaternion.q1[i]
-        quat.q2 = quaternion.q2[i]
-        quat.q3 = quaternion.q3[i]
-        quat.q4 = quaternion.q4[i]
+        // Remote roll and pitch from measured felid (tilt correction)
+        const xyz = tilt_correction[i].rotate([mag_field.x[i], mag_field.y[i], mag_field.z[i]])
 
-        // Get roll and pitch
-        const roll = quat.get_euler_roll()
-        const pitch = quat.get_euler_pitch()
+        // Calculate yaw from measurement
+        yaw[i] = wrap_2PI(Math.atan2(-xyz[1],xyz[0]) + declination_rad)
 
-        // Rotate from body frame to earth frame with roll and pitch only
-        // Only X/Y components are required for heading
-
-        // Pre-cal some trig
-        const cp = Math.cos(pitch)
-        const sp = Math.sin(pitch)
-        const sr = Math.sin(roll)
-        const cr = Math.cos(roll)
-
-        const X = cp * mag_field.x[i] + sr * sp * mag_field.y[i] + cr * sp * mag_field.z[i]
-        const Y =                     -1.0 * cr * mag_field.y[i] +      sr * mag_field.z[i]
-
-        yaw[i] = wrap_2PI(Math.atan2(Y,X) + declination_rad)
     }
 
     return yaw
@@ -893,15 +880,15 @@ function calculate_bins() {
         if (MAG_Data[i] == null) {
             continue
         }
-        const len = MAG_Data[i].expected.x.length
-        MAG_Data[i].expected.bins = new Array(len)
+        const len = MAG_Data[i].orig.expected.x.length
+        MAG_Data[i].bins = new Array(len)
 
         // Find the closest bin to each point 
         for (let j = 0; j < len; j++) {
             // Convert to unit
-            let x = MAG_Data[i].expected.x[j]
-            let y = MAG_Data[i].expected.y[j]
-            let z = MAG_Data[i].expected.z[j]
+            let x = MAG_Data[i].orig.expected.x[j]
+            let y = MAG_Data[i].orig.expected.y[j]
+            let z = MAG_Data[i].orig.expected.z[j]
             const length = Math.sqrt(x**2 + y**2 + z**2)
             x /= length
             y /= length
@@ -914,7 +901,7 @@ function calculate_bins() {
 
                 if (dist_sq < min_dist) {
                     min_dist = dist_sq
-                    MAG_Data[i].expected.bins[j] = k
+                    MAG_Data[i].bins[j] = k
                 }
             }
         }
@@ -945,7 +932,7 @@ function get_weights(bins) {
 
     for (let i = 0; i < len; i++) {
         // Scale by mean_bin_size so that the average weight is 1, this give comparable error magnitude to the un-weighted case
-        weights[i] = mean_bin_size / count[bins[i]]
+        //weights[i] = mean_bin_size / count[bins[i]]
     }
 
     return { weights, coverage }
@@ -970,16 +957,16 @@ function check_orientation() {
         const num_samples = end_index - start_index
 
         // Get weighting based on bins
-        const weights = get_weights(MAG_Data[i].expected.bins.slice(start_index, end_index)).weights
+        const weights = get_weights(MAG_Data[i].bins.slice(start_index, end_index)).weights
 
         // Calculate average earth filed to match sensor to
         let ef_mean = { x:0.0, y:0.0, z:0.0 }
         for (let j = 0; j < num_samples; j++) {
             const data_index = start_index + j
 
-            ef_mean.x += MAG_Data[i].expected.x[data_index]
-            ef_mean.y += MAG_Data[i].expected.y[data_index]
-            ef_mean.z += MAG_Data[i].expected.z[data_index]
+            ef_mean.x += MAG_Data[i].orig.expected.x[data_index]
+            ef_mean.y += MAG_Data[i].orig.expected.y[data_index]
+            ef_mean.z += MAG_Data[i].orig.expected.z[data_index]
         }
         ef_mean.x /= num_samples
         ef_mean.y /= num_samples
@@ -1041,9 +1028,9 @@ function check_orientation() {
             for (let j = 0; j < num_samples; j++) {
                 const data_index = start_index + j
 
-                error_sum += ((x[j] - MAG_Data[i].expected.x[data_index] + offsets.x)**2 +
-                              (y[j] - MAG_Data[i].expected.y[data_index] + offsets.y)**2 +
-                              (z[j] - MAG_Data[i].expected.z[data_index] + offsets.z)**2) * weights[j]
+                error_sum += ((x[j] - MAG_Data[i].orig.expected.x[data_index] + offsets.x)**2 +
+                              (y[j] - MAG_Data[i].orig.expected.y[data_index] + offsets.y)**2 +
+                              (z[j] - MAG_Data[i].orig.expected.z[data_index] + offsets.z)**2) * weights[j]
             }
 
             rot_error.push({ rotation: rot, error: error_sum / num_samples })
@@ -1112,22 +1099,19 @@ function check_orientation() {
     console.log(`Orientation check took: ${end - start} ms`);
 }
 
-function get_body_frame_ef(quaternion) {
+function get_body_frame_ef(tilt_correction, yaw) {
 
-    const len = quaternion.q1.length
+    const len = tilt_correction.length
 
     ret = { x: new Array(len), y: new Array(len), z: new Array(len) }
 
     let q = new Quaternion()
     for (i = 0; i < len; i++) {
 
-        // Invert and load into helper
-        q.q1 =  quaternion.q1[i]
-        q.q2 = -quaternion.q2[i]
-        q.q3 = -quaternion.q3[i]
-        q.q4 = -quaternion.q4[i]
+        q.from_euler(0, 0, -yaw[i])
 
-        const tmp = q.rotate(earth_field.vector)
+        tmp = q.rotate(earth_field.vector)
+        tmp = tilt_correction[i].inverted().rotate(tmp)
 
         ret.x[i] = tmp[0]
         ret.y[i] = tmp[1]
@@ -1156,16 +1140,13 @@ function select_body_frame_attitude() {
         throw new Error()
     }
 
-    // Calculate expected for this source
-    Object.assign(source, get_body_frame_ef(source.quaternion))
-
     // Interpolate expected to logged compass and calculate error
     for (let i = 0; i < 3; i++) {
         if (MAG_Data[i] == null) {
             continue
         }
 
-        // Spherical interpolation between arrays of quatenions
+        // Spherical interpolation between arrays of quaternions
         function array_slerp(values, index, query_index) {
 
             const len = query_index.length
@@ -1222,8 +1203,10 @@ function select_body_frame_attitude() {
 
         // Get yaw from quaternion for comparison later
         let quat = new Quaternion()
+        let quat_yaw = new Quaternion()
         const len = MAG_Data[i].quaternion.q1.length
         MAG_Data[i].quaternion.yaw = new Array(len)
+        MAG_Data[i].tilt_correction = new Array(len)
         for (let j = 0; j < len; j++) {
 
             // Populate quaternion
@@ -1232,18 +1215,26 @@ function select_body_frame_attitude() {
             quat.q3 = MAG_Data[i].quaternion.q3[j]
             quat.q4 = MAG_Data[i].quaternion.q4[j]
 
-            MAG_Data[i].quaternion.yaw[j] = quat.get_euler_yaw()
+            // Record original yaw
+            const yaw = quat.get_euler_yaw()
+            MAG_Data[i].quaternion.yaw[j] = yaw
+
+            // Quaternion to remove yaw
+            quat_yaw.from_euler(0, 0, -yaw)
+
+            // Remove yaw from attitude to provide a tilt correction rotation
+            MAG_Data[i].tilt_correction[j] = quat_yaw.mul(quat)
 
         }
 
         // Rotate earth field into body frame
-        MAG_Data[i].expected = get_body_frame_ef(MAG_Data[i].quaternion)
+        MAG_Data[i].orig.expected = get_body_frame_ef(MAG_Data[i].tilt_correction, MAG_Data[i].quaternion.yaw)
 
         // Error between existing calibration and expected
-        MAG_Data[i].orig.error = calc_error(MAG_Data[i].expected, MAG_Data[i].orig)
+        MAG_Data[i].orig.error = calc_error(MAG_Data[i].orig.expected, MAG_Data[i].orig)
 
         // Yaw estimate from existing calibration
-        MAG_Data[i].orig.yaw = get_yaw(MAG_Data[i].orig, MAG_Data[i].quaternion)
+        MAG_Data[i].orig.yaw = get_yaw(MAG_Data[i].orig, MAG_Data[i].tilt_correction)
     }
 }
 
@@ -1263,9 +1254,12 @@ function fit() {
         const num_samples = end_index - start_index
 
         // Get weighting based on bins
-        const weight_obj = get_weights(MAG_Data[i].expected.bins.slice(start_index, end_index))
+        const weight_obj = get_weights(MAG_Data[i].bins.slice(start_index, end_index))
         const weights = weight_obj.weights
         const sqrt_weight = array_sqrt(weights)
+
+        // Tilt correction quaternions
+        const tilt_correction = MAG_Data[i].tilt_correction.slice(start_index, end_index)
 
         // Update coverage graphic
         MAG_Data[i].coverage.value = weight_obj.coverage
@@ -1281,18 +1275,18 @@ function fit() {
         let orientation
         if (!MAG_Data[i].rotate) {
             // Use raw directly
-            rot.x = MAG_Data[i].raw.x
-            rot.y = MAG_Data[i].raw.y
-            rot.z = MAG_Data[i].raw.z
+            rot.x = MAG_Data[i].raw.x.slice(start_index, end_index)
+            rot.y = MAG_Data[i].raw.y.slice(start_index, end_index)
+            rot.z = MAG_Data[i].raw.z.slice(start_index, end_index)
 
             // Original orientation
             orientation = MAG_Data[i].params.orientation
 
         } else {
             // use rotation corrected
-            rot.x = MAG_Data[i].rotated.x
-            rot.y = MAG_Data[i].rotated.y
-            rot.z = MAG_Data[i].rotated.z
+            rot.x = MAG_Data[i].rotated.x.slice(start_index, end_index)
+            rot.y = MAG_Data[i].rotated.y.slice(start_index, end_index)
+            rot.z = MAG_Data[i].rotated.z.slice(start_index, end_index)
 
             // New orientation (possibly)
             orientation = MAG_Data[i].rotation
@@ -1302,7 +1296,6 @@ function fit() {
         // Solve in the form Ax = B
         let A = new mlMatrix.Matrix(num_samples*3, 12)
         let B = new mlMatrix.Matrix(num_samples*3, 1)
-        let B2 = new mlMatrix.Matrix(num_samples*3, 1)
 
         function setup_iron(A, row, colum, x, y, z) {
 
@@ -1409,28 +1402,15 @@ function fit() {
 
         }
 
-        // Populate A and B
-        for (let j = 0; j < num_samples; j++) {
-            const index = j*3
-            const data_index = start_index + j
-
-            // A matrix, all fits include offsets, setup rest later
-            setup_offsets(A, index, 0, sqrt_weight[j])
-
-            // B Matrix if scale or iron are included
-            B.data[index+0][0] = MAG_Data[i].expected.x[data_index] * sqrt_weight[j]
-            B.data[index+1][0] = MAG_Data[i].expected.y[data_index] * sqrt_weight[j]
-            B.data[index+2][0] = MAG_Data[i].expected.z[data_index] * sqrt_weight[j]
-
-            // B Matrix for offsets only
-            B2.data[index+0][0] = (MAG_Data[i].expected.x[data_index] - rot.x[data_index]) * sqrt_weight[j]
-            B2.data[index+1][0] = (MAG_Data[i].expected.y[data_index] - rot.y[data_index]) * sqrt_weight[j]
-            B2.data[index+2][0] = (MAG_Data[i].expected.z[data_index] - rot.z[data_index]) * sqrt_weight[j]
-        }
 
         for (let fit of MAG_Data[i].fits) {
 
-            function evaluate_fit(params) {
+            let mot_val
+            if (fit.value != null) {
+                mot_val = fit.value.slice(start_index, end_index)
+            }
+
+            function evaluate_fit(expected, params) {
 
                 function params_valid(params) {
                     function check_range(val, range) {
@@ -1457,7 +1437,7 @@ function fit() {
                     params.diagonals = [1.0, 1.0, 1.0]
                 }
                 if (params.off_diagonals == null) {
-                    params.off_diagonals = [0.0, 0.0, 0.0,]
+                    params.off_diagonals = [0.0, 0.0, 0.0]
                 }
                 if (params.scale == null) {
                     params.scale = 1.0
@@ -1470,23 +1450,87 @@ function fit() {
                 // Check param ranges
                 let ret = { params, valid: params_valid(params) }
 
+                ret.valid = true
+
                 if (!ret.valid) {
                     return ret
                 }
 
-                apply_params(ret, rot, params, fit.value)
-                ret.error = calc_error(MAG_Data[i].expected, ret)
+                apply_params(ret, rot, params, mot_val)
+                ret.error = calc_error(expected, ret)
 
                 // Calculate error for selected samples only
                 let error_sum = 0
                 for (let j = 0; j < num_samples; j++) {
-                    error_sum += weights[j] * ret.error[start_index + j]**2
+                    error_sum += weights[j] * ret.error[j]**2
                 }
                 ret.mean_error = Math.sqrt(error_sum / num_samples)
 
-                ret.yaw = get_yaw(ret, MAG_Data[i].quaternion)
+                ret.yaw = get_yaw(ret, MAG_Data[i].tilt_correction)
 
                 return ret
+            }
+
+            function iterate_solution(fit_inst, B_population_fun, correction_fun, name, extract_param_fun) {
+                // Start with the estimate from the original log
+                fit_inst.expected = {
+                    x: MAG_Data[i].orig.expected.x.slice(start_index, end_index),
+                    y: MAG_Data[i].orig.expected.y.slice(start_index, end_index),
+                    z: MAG_Data[i].orig.expected.z.slice(start_index, end_index),
+                }
+
+                // Pre-decompose matrix A
+                const QR_A = new mlMatrix.QrDecomposition(A)
+
+                let converged = false
+                let params
+                let yaw
+
+                // Run limited number of iterations
+                let k
+                for (k = 0; k < 1000; k++) {
+
+                    // Setup B matrix
+                    B_population_fun(fit_inst.expected)
+
+                    // Solve
+                    params = QR_A.solve(B)
+
+                    // Get corrected earth field
+                    const corrected = correction_fun(params)
+
+                    // Update yaw
+                    const new_yaw = get_yaw(corrected, tilt_correction)
+
+                    // Check for convergence
+                    if (yaw != null) {
+                        let max_change = 0
+                        for (let j = 0; j < num_samples; j++) {
+                            max_change = Math.max(max_change, Math.abs(wrap_PI(yaw[j] - new_yaw[j])))
+                        }
+                        converged = max_change < 0.001 * (Math.PI / 180.0)
+                    }
+                    yaw = new_yaw
+
+                    // Recalculate expected
+                    fit_inst.expected = get_body_frame_ef(tilt_correction, yaw)
+
+                    if (converged) {
+                        // Were done
+                        break
+                    }
+
+                }
+
+                if (converged) {
+                    console.log("Mag " + (i+1) + " " + name + " " + fit.name + " converged after " + (k+1))
+                } else {
+                    console.log("Mag " + (i+1) + " " + name + " " + fit.name + " failed to converged after " + k)
+                }
+
+                Object.assign(fit_inst, evaluate_fit(fit_inst.expected, extract_param_fun(params)))
+                //fit_inst.valid &= converged
+
             }
 
 
@@ -1495,26 +1539,53 @@ function fit() {
             // Just fitting offsets, possibly with motor correction
             A.columns = fit_mot ? 6 : 3
 
-            if (fit_mot) {
-                for (let j = 0; j < num_samples; j++) {
-                    const index = j*3
-                    const data_index = start_index + j
-                    setup_motor(A, index, 3, fit.value[data_index] * sqrt_weight[j])
+            // A matrix
+            for (let j = 0; j < num_samples; j++) {
+                const index = j*3
+                setup_offsets(A, j*3, 0, sqrt_weight[j])
+
+                if (fit_mot) {
+                    setup_motor(A, j*3, 3, mot_val[j] * sqrt_weight[j])
                 }
             }
 
-            // Solve
-            let params = mlMatrix.solve(A, B2)
-
-            // Extract params
-            let offsets = [ params.get(0,0), params.get(1,0), params.get(2,0) ]
-
-            let motor
-            if (fit_mot) {
-                motor = [params.get(3,0), params.get(4,0), params.get(5,0)]
+            function populate_B_offsets(expected) {
+                for (let j = 0; j < num_samples; j++) {
+                    const index = j*3
+                    B.data[index+0][0] = (expected.x[j] - rot.x[j]) * sqrt_weight[j]
+                    B.data[index+1][0] = (expected.y[j] - rot.y[j]) * sqrt_weight[j]
+                    B.data[index+2][0] = (expected.z[j] - rot.z[j]) * sqrt_weight[j]
+                }
             }
 
-            Object.assign(fit.offsets, evaluate_fit({offsets, motor, fit_type: fit.type }))
+            function correct_offsets(params) {
+                let corrected = {
+                    x: array_offset(rot.x, params.get(0,0)),
+                    y: array_offset(rot.y, params.get(1,0)),
+                    z: array_offset(rot.z, params.get(2,0))
+                }
+                if (fit_mot) {
+                    corrected.x = array_add(corrected.x, array_scale(fit.value, params.get(3,0)))
+                    corrected.y = array_add(corrected.y, array_scale(fit.value, params.get(4,0)))
+                    corrected.z = array_add(corrected.z, array_scale(fit.value, params.get(5,0)))
+                }
+                return corrected
+            }
+
+            function extract_offsets(params) {
+                // Extract params
+                let offsets = [ params.get(0,0), params.get(1,0), params.get(2,0) ]
+
+                let motor
+                if (fit_mot) {
+                    motor = [ params.get(3,0), params.get(4,0), params.get(5,0) ]
+                }
+
+                return { offsets, motor, fit_type: fit.type }
+            }
+
+            // Solve
+            iterate_solution(fit.offsets, populate_B_offsets, correct_offsets, "offsets", extract_offsets)
 
 
             // Just fitting offsets and scale, possibly with motor correction
@@ -1524,28 +1595,55 @@ function fit() {
             // Add scale and motor
             for (let j = 0; j < num_samples; j++) {
                 const index = j*3
-                const data_index = start_index + j
 
-                setup_scale(A, index, 3, rot.x[data_index] * sqrt_weight[j], rot.y[data_index] * sqrt_weight[j], rot.z[data_index] * sqrt_weight[j])
+                setup_scale(A, index, 3, rot.x[j] * sqrt_weight[j], rot.y[j] * sqrt_weight[j], rot.z[j] * sqrt_weight[j])
 
                 if (fit_mot) {
-                    setup_motor(A, index, 4, fit.value[data_index] * sqrt_weight[j])
+                    setup_motor(A, index, 4, mot_val[j] * sqrt_weight[j])
                 }
             }
 
-            // Solve
-            params = mlMatrix.solve(A, B)
-
-            // Extract params
-            let scale = params.get(3,0)
-
-            // Remove scale from offsets
-            offsets = array_scale([ params.get(0,0), params.get(1,0), params.get(2,0) ], 1 / scale)
-
-            if (fit_mot) {
-                motor = [params.get(4,0), params.get(5,0), params.get(6,0)]
+            function populate_B(expected) {
+                for (let j = 0; j < num_samples; j++) {
+                    const index = j*3
+                    B.data[index+0][0] = expected.x[j] * sqrt_weight[j]
+                    B.data[index+1][0] = expected.y[j] * sqrt_weight[j]
+                    B.data[index+2][0] = expected.z[j] * sqrt_weight[j]
+                }
             }
-            Object.assign(fit.scale, evaluate_fit({offsets, scale, motor, fit_type: fit.type }))
+
+            function correct(params) {
+                // Apply calibration
+                const corrected_mat = A.mmul(params)
+                let corrected = {
+                    x: new Array(num_samples),
+                    y: new Array(num_samples),
+                    z: new Array(num_samples)
+                }
+                for (let j = 0; j < num_samples; j++) {
+                    const index = j*3
+                    corrected.x[j] = corrected_mat.data[index+0][0] / sqrt_weight[j]
+                    corrected.y[j] = corrected_mat.data[index+1][0] / sqrt_weight[j]
+                    corrected.z[j] = corrected_mat.data[index+2][0] / sqrt_weight[j]
+                }
+                return corrected
+            }
+
+            function extract_offsets_and_scale(params) {
+                let scale = params.get(3,0)
+
+                // Remove scale from offsets
+                let offsets = array_scale([ params.get(0,0), params.get(1,0), params.get(2,0) ], 1 / scale)
+
+                let motor
+                if (fit_mot) {
+                    motor = [ params.get(4,0), params.get(5,0), params.get(6,0) ]
+                }
+
+                return { offsets, scale, motor, fit_type: fit.type }
+            }
+
+            iterate_solution(fit.scale, populate_B, correct, "scale", extract_offsets_and_scale)
 
             // Fitting offsets and iron matrix, possibly with motor correction
 
@@ -1554,42 +1652,44 @@ function fit() {
 
             for (let j = 0; j < num_samples; j++) {
                 const index = j*3
-                const data_index = start_index + j
 
-                setup_iron(A, index, 3, rot.x[data_index] * sqrt_weight[j], rot.y[data_index] * sqrt_weight[j], rot.z[data_index] * sqrt_weight[j])
+                setup_iron(A, index, 3, rot.x[j] * sqrt_weight[j], rot.y[j] * sqrt_weight[j], rot.z[j] * sqrt_weight[j])
 
                 if (fit_mot) {
-                    setup_motor(A, index, 9, fit.value[data_index] * sqrt_weight[j])
+                    setup_motor(A, index, 9, mot_val[j] * sqrt_weight[j])
                 }
 
             }
 
-            // Solve
-            params = mlMatrix.solve(A, B)
+            function extract_offsets_and_iron(params) {
+                // Extract params
+                let diagonals =     [ params.get(3,0), params.get(4,0), params.get(5,0) ]
+                let off_diagonals = [ params.get(6,0), params.get(7,0), params.get(8,0) ]
 
-            // Extract params
-            let diagonals =     [ params.get(3,0), params.get(4,0), params.get(5,0) ]
-            let off_diagonals = [ params.get(6,0), params.get(7,0), params.get(8,0) ]
+                // Remove iron correction from offsets
+                const iron = new mlMatrix.Matrix([
+                    [diagonals[0],     off_diagonals[0], off_diagonals[1]],
+                    [off_diagonals[0], diagonals[1],     off_diagonals[2]], 
+                    [off_diagonals[1], off_diagonals[2], diagonals[2]]
+                ])
+                const uncorrected_offsets = new mlMatrix.Matrix([[ params.get(0,0), params.get(1,0), params.get(2,0) ]])
+                let offsets = Array.from(uncorrected_offsets.mmul(mlMatrix.inverse(iron)).data[0])
 
-            // Remove iron correction from offsets
-            const iron = new mlMatrix.Matrix([
-                [diagonals[0],     off_diagonals[0], off_diagonals[1]],
-                [off_diagonals[0], diagonals[1],     off_diagonals[2]], 
-                [off_diagonals[1], off_diagonals[2], diagonals[2]]
-            ])
-            const uncorrected_offsets = new mlMatrix.Matrix([[params.get(0,0), params.get(1,0), params.get(2,0)]])
-            offsets = Array.from(uncorrected_offsets.mmul(mlMatrix.inverse(iron)).data[0])
+                // Normalize iron matrix into scale param
+                let scale = array_mean(diagonals)
+                diagonals = array_scale(diagonals, 1 / scale)
+                off_diagonals = array_scale(off_diagonals, 1 / scale)
 
-            // Normalize iron matrix into scale param
-            scale = array_mean(diagonals)
-            diagonals = array_scale(diagonals, 1 / scale)
-            off_diagonals = array_scale(off_diagonals, 1 / scale)
+                let motor
+                if (fit_mot) {
+                    motor = [ params.get(9,0), params.get(10,0), params.get(11,0) ]
+                }
 
-            if (fit_mot) {
-                motor = [params.get(9,0), params.get(10,0), params.get(11,0)]
+                return { offsets, scale, diagonals, off_diagonals, motor, fit_type: fit.type }
             }
 
-            Object.assign(fit.iron, evaluate_fit({offsets, scale, diagonals, off_diagonals, motor, fit_type: fit.type}))
+            iterate_solution(fit.iron, populate_B, correct, "iron", extract_offsets_and_iron)
+
 
             // Disable selection of invalid fits
             // select the first valid none motor fit by default

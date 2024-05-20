@@ -455,6 +455,15 @@ function Quaternion() {
         this.q4 *= -1
     }
 
+    this.inverted = function() {
+        const ret = new Quaternion
+        ret.q1 = this.q1
+        ret.q2 = this.q2 * -1
+        ret.q3 = this.q3 * -1
+        ret.q4 = this.q4 * -1
+        return ret
+    }
+
     this.rotate = function(vec) {
 
         let uv = [
@@ -498,6 +507,27 @@ function Quaternion() {
     // get euler yaw angle
     this.get_euler_yaw = function() {
         return Math.atan2(2.0 * (this.q1 * this.q4 + this.q2 * this.q3), 1.0 - 2.0 * (this.q3 * this.q3 + this.q4 * this.q4))
+    }
+
+    this.mul = function(v) {
+        const ret = new Quaternion
+
+        const w1 = this.q1
+        const x1 = this.q2
+        const y1 = this.q3
+        const z1 = this.q4
+
+        const w2 = v.q1
+        const x2 = v.q2
+        const y2 = v.q3
+        const z2 = v.q4
+
+        ret.q1 = w1*w2 - x1*x2 - y1*y2 - z1*z2
+        ret.q2 = w1*x2 + x1*w2 + y1*z2 - z1*y2
+        ret.q3 = w1*y2 - x1*z2 + y1*w2 + z1*x2
+        ret.q4 = w1*z2 + x1*y2 - y1*x2 + z1*w2
+
+        return ret
     }
 
 }
