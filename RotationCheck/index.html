@@ -5,6 +5,8 @@
 <title>ArduPilot Rotation Helper</title>
 <link rel="icon" href="../images/AP_favicon.png">
 
+<script src="https://ajax.googleapis.com/ajax/libs/threejs/r84/three.min.js"></script>
+
 <script type="text/javascript" src="RotationCheck.js"></script>
 <script type="text/javascript" src="Matrix3.js"></script>
 
@@ -46,6 +48,11 @@
 
   <label for="EulerYaw">Yaw (deg):</label>
   <input id="EulerYaw" name="EulerYaw" type="number" onchange="update()" style="width:50px" disabled/>
+
+  <input type="radio" id="method_AP" name="method" onchange="update();" checked>
+  <label for="method_AP">AP</label>
+  <input type="radio" id="method_three" name="method" onchange="update();">
+  <label for="method_three">Three.js</label>
 </p>
 
 <div style="width:1200px;">
@@ -180,6 +187,27 @@
 
     // The diff of all 9 elements should be 0
     if (diff > (Number.EPSILON * 9)) {
+      throw new Error("Rotation check failed")
+    }
+
+    // Check with three
+    const three_euler = new THREE.Euler(roll_angle * deg2rad, pitch_angle * deg2rad,yaw_angle * deg2rad, "ZYX")
+    const m = new THREE.Matrix4();
+    m.makeRotationFromEuler(three_euler)
+
+    const vec_key = ["a", "b", "c"]
+    const axis_key = ["x", "y", "z"]
+    diff = 0
+    for (let i = 0; i < vec_key.length; i++) {
+      for (let j = 0; j < axis_key.length; j++) {
+        //const three_key = (i * 4) + j
+        const three_key = (j * 4) + i
+        diff += Math.abs(mat[vec_key[i]][axis_key[j]] - m.elements[three_key])
+      }
+    }
+
+    // The diff of all 9 elements should be 0 (or close)
+    if (diff > 10**-6) {
       throw new Error("Rotation check failed")
     }
 

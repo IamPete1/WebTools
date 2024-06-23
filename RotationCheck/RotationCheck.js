@@ -11,13 +11,13 @@ function update() {
     const pitch_in = document.getElementById("EulerPitch")
     const yaw_in = document.getElementById("EulerYaw")
 
+    const deg2rad = Math.PI / 180.0
     if ((rotation == 101) || (rotation == 102)) {
         // Custom rotation, use input from boxes
         roll_in.disabled = false
         pitch_in.disabled = false
         yaw_in.disabled = false
 
-        const deg2rad = Math.PI / 180.0
         mat.from_euler(parseFloat(roll_in.value) * deg2rad, parseFloat(pitch_in.value) * deg2rad, parseFloat(yaw_in.value) * deg2rad)
 
     } else if (mat.from_rotation(rotation)) {
@@ -36,7 +36,7 @@ function update() {
 
     function update_plot_data(index, vector) {
 
-        let rotated = mat.rotate(vector)
+        const rotated = mat.rotate(vector)
 
         index = index*2
         Object.assign(rotations_plot.data[index + 0], {  x: [rotated[0]],   y: [rotated[1]],   z: [rotated[2]], u: [rotated[0]], v: [rotated[1]], w: [rotated[2]] })
@@ -44,9 +44,30 @@ function update() {
 
     }
 
-    update_plot_data(3, [ origin_size * 1.5, 0, 0 ])
-    update_plot_data(4, [ 0, origin_size * 1.5, 0 ])
-    update_plot_data(5, [ 0, 0, origin_size * 1.5 ])
+    const three_euler = new THREE.Euler(parseFloat(roll_in.value) * deg2rad, parseFloat(pitch_in.value) * deg2rad, parseFloat(yaw_in.value) * deg2rad, "ZYX")
+    function update_plot_three_data(index, vector) {
+
+        const b = new THREE.Vector3( vector[0], vector[1], vector[2] );
+        b.applyEuler(three_euler);
+
+        const rotated = [ b.x, b.y, b.z ]
+
+        index = index*2
+        Object.assign(rotations_plot.data[index + 0], {  x: [rotated[0]],   y: [rotated[1]],   z: [rotated[2]], u: [rotated[0]], v: [rotated[1]], w: [rotated[2]] })
+        Object.assign(rotations_plot.data[index + 1], {  x: [0,rotated[0]], y: [0,rotated[1]], z: [0,rotated[2]] })
+
+    }
+
+    if (document.getElementById("method_AP").checked) {
+        update_plot_data(3, [ origin_size * 1.5, 0, 0 ])
+        update_plot_data(4, [ 0, origin_size * 1.5, 0 ])
+        update_plot_data(5, [ 0, 0, origin_size * 1.5 ])
+    } else {
+        // Attempt with 3 js eulers
+        update_plot_three_data(3, [ origin_size * 1.5, 0, 0 ])
+        update_plot_three_data(4, [ 0, origin_size * 1.5, 0 ])
+        update_plot_three_data(5, [ 0, 0, origin_size * 1.5 ])
+    }
 
     let plot = document.getElementById("plot")
     Plotly.redraw(plot)
