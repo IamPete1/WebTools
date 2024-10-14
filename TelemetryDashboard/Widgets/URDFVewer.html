@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Sandbox</title>
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@v0.152.0/build/three.module.js",
+            "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@v0.152.0/examples/jsm/"
+          }
+        }
+    </script>
+    <script type="text/javascript" src="../MAVLink/mavlink.js"></script>
+</head>
+<body>
+</body>
+<script type="module">
+
+    import {
+        WebGLRenderer,
+        PerspectiveCamera,
+        Scene,
+        DirectionalLight,
+        Color,
+        AmbientLight,
+        LoadingManager,
+        Quaternion,
+        Euler
+    } from 'three'
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+    import URDFLoader from 'https://unpkg.com/urdf-loader@0.12.3/src/URDFLoader.js'
+
+    const div = document.createElement("div")
+    div.style.position = "absolute"
+    div.style.top = 0
+    div.style.left = 0
+    div.style.bottom = 0
+    div.style.right = 0
+    div.style.margin = "10px"
+    div.style.border = "5px solid"
+    div.style.borderRadius = "10px"
+    div.style.borderColor = "#c8c8c8"
+    document.body.appendChild(div)
+
+    const canvas = document.createElement("canvas")
+    canvas.style.display = "block"
+    canvas.style.borderRadius = "5px"
+    div.appendChild(canvas)
+
+    let scene, camera, renderer, vehicle, controls
+    let prop_rad_s = 0.0
+    let last_render = Date.now()
+
+    let base_rotation = new Quaternion().setFromEuler(new Euler(-90 * (Math.PI / 180), 0.0, 90 * (Math.PI / 180)))
+
+    init()
+    render()
+
+    function init() {
+
+        scene = new Scene()
+        scene.background = new Color(0x87CEEB)
+
+        camera = new PerspectiveCamera()
+        camera.position.set(0, 10, 5)
+        camera.lookAt(0, 0, 0)
+
+        renderer = new WebGLRenderer({canvas: canvas, antialias: true })
+
+        const directionalLight = new DirectionalLight(0xffffff, 1.0)
+        directionalLight.castShadow = true
+        directionalLight.shadow.mapSize.setScalar(1024)
+        directionalLight.position.set(5, 30, 5)
+        scene.add(directionalLight)
+
+        const ambientLight = new AmbientLight(0xffffff, 0.2)
+        scene.add(ambientLight)
+
+        controls = new OrbitControls(camera, renderer.domElement)
+        controls.minDistance = 4
+        controls.target.y = 1
+        controls.update()
+
+        // Load vehicle
+        const manager = new LoadingManager()
+        const loader = new URDFLoader(manager)
+        loader.load('../Cessna/Cessna.urdf', result => {
+            vehicle = result
+        })
+
+        // wait until all the geometry has loaded to add the model to the scene
+        manager.onLoad = () => {
+            vehicle.quaternion.copy(base_rotation)
+
+            vehicle.updateMatrixWorld(true)
+            scene.add(vehicle)
+        }
+
+        onResize()
+        window.addEventListener('resize', onResize)
+
+    }
+
+    function onResize() {
+        const width = div.clientWidth
+        const height = div.clientHeight
+
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(window.devicePixelRatio)
+
+        camera.aspect = width / height
+        camera.updateProjectionMatrix()
+    }
+
+    function render() {
+        requestAnimationFrame(render)
+
+        // If throttle is active then animate prop
+        const now = Date.now()
+        let dt = (now - last_render) / 1000
+        last_render = now
+
+        if (vehicle != null) {
+            let new_value = vehicle.joints.propeller_joint.jointValue[0] + prop_rad_s * dt
+            vehicle.joints.propeller_joint.setJointValue(new_value)
+        }
+
+        renderer.render(scene, camera)
+    }
+
+    function update_joints(msg) {
+
+        if (msg.port != 0) {
+            // Only interested in first 16 servos
+            return
+        }
+
+        function normalize_pwm(pwm, reverse) {
+            const high = 1900
+            const low = 1100
+            let value = (pwm - low) / (high - low)
+            value = (value - 0.5) * 2.0
+            if (reverse === true) {
+                value *= -1
+            }
+            return Math.min(Math.max(value, -1.0), 1.0)
+        }
+
+        function set_joint(joint, norm) {
+            let angle
+            if (norm > 0) {
+                angle = norm * joint.limit.upper
+            } else {
+                angle = Math.abs(norm) * joint.limit.lower
+            }
+            joint.setJointValue(angle)
+        }
+
+        set_joint(vehicle.joints.elevators_joint, normalize_pwm(msg.servo2_raw))
+        set_joint(vehicle.joints.left_aileron_joint, normalize_pwm(msg.servo1_raw, true))
+        set_joint(vehicle.joints.right_aileron_joint, normalize_pwm(msg.servo1_raw))
+        set_joint(vehicle.joints.rudder_joint, normalize_pwm(msg.servo4_raw))
+
+        const max_rpm = 1000
+        const prop_rpm = ((msg.servo3_raw - 1000) / 1000) * max_rpm
+        prop_rad_s = (prop_rpm / 60) * Math.PI * 2
+    }
+
+    function update_attitude(msg) {
+        const attitude = new Quaternion().setFromEuler(new Euler(msg.roll, msg.pitch, 0.0))
+        vehicle.quaternion.multiplyQuaternions(base_rotation, attitude)
+    }
+
+    function handle_MAVLink(msg) {
+        // Servo positions from SERVO_OUTPUT_RAW
+        if (msg._id == 36) {
+            update_joints(msg)
+        }
+
+        // vehicle attitude from ATTITUDE
+        if (msg._id == 30) {
+            update_attitude(msg)
+        }
+    }
+
+
+
+    window.addEventListener('message', function (e) {
+        if (vehicle == null) {
+            return
+        }
+        const data = e.data
+
+        // Incoming MAVLink message
+        if ("MAVLink" in data) {
+            handle_MAVLink(data.MAVLink)
+        }
+
+    })
+
+</script>
+</html>

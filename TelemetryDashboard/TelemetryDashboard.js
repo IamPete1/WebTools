@@ -303,10 +303,13 @@ function new_widget(type, options) {
             return new WidgetMenu(options)
 
         case "WidgetSandBox":
-            return new WidgetSandBox(options)
+            return new WidgetSandBox(options, 'Widgets/SandBox.html')
 
         case "WidgetSubGrid":
             return new WidgetSubGrid(options)
+
+        case "WidgetURDFVewer":
+            return new WidgetSandBox(options, 'Widgets/URDFVewer.html')
     }
 
     throw new Error("Unknown widget type: " + type)

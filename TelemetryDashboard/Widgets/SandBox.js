@@ -2,7 +2,7 @@
 // Loads iframe and sends messages to it
 
 class WidgetSandBox extends WidgetBase {
-    constructor(options) {
+    constructor(options, html) {
 
         if (options == null) {
             options = {}
@@ -40,8 +40,8 @@ handle_msg = function (msg) {
 
         // Sandboxed iframe for user content
         this.iframe = document.createElement("iframe")
-        this.iframe.sandbox = 'allow-scripts'
-        this.iframe.src = 'Widgets/SandBox.html'
+        this.iframe.sandbox = 'allow-scripts allow-same-origin'
+        this.iframe.src = html
         this.iframe.scrolling="no"
         this.iframe.style.border = "none"
         this.iframe.style.width = "100%"
