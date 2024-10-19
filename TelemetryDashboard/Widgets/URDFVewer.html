@@ -32,6 +32,43 @@
     import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
     import URDFLoader from 'https://unpkg.com/urdf-loader@0.12.3/src/URDFLoader.js'
 
+    let options
+
+    // Overload fetch so we can supply files directly
+    const { fetch: originalFetch } = window
+
+    window.fetch = async (...args) => {
+        let [resource, config ] = args
+
+        // Find the target file
+        let target
+        if (typeof resource === 'object') {
+            target = resource.url
+        } else {
+            target = resource
+        }
+
+        // Fetch from base64 url for give file
+        let response
+        if (target.endsWith(".urdf")) {
+            response = await originalFetch(options.urdfFile[0].url)
+        } else {
+            for (const mesh of options.meshFiles) {
+                if (target.endsWith(mesh.originalName)) {
+                    response = await originalFetch(mesh.url)
+                    break
+                }
+            }
+        }
+
+        if (response == null) {
+            // If local file overload failed try normal fetch
+            response = await originalFetch(resource, config)
+        }
+
+        return response
+    }
+
     const div = document.createElement("div")
     div.style.position = "absolute"
     div.style.top = 0
@@ -54,9 +91,6 @@
     let last_render = Date.now()
 
     let base_rotation = new Quaternion().setFromEuler(new Euler(-90 * (Math.PI / 180), 0.0, 90 * (Math.PI / 180)))
-
-    init()
-    render()
 
     function init() {
 
@@ -101,6 +135,8 @@
         onResize()
         window.addEventListener('resize', onResize)
 
+        // Start render loop
+        render()
     }
 
     function onResize() {
@@ -174,6 +210,11 @@
     }
 
     function handle_MAVLink(msg) {
+        // Need vehicle to update
+        if (vehicle == null) {
+            return
+        }
+
         // Servo positions from SERVO_OUTPUT_RAW
         if (msg._id == 36) {
             update_joints(msg)
@@ -185,13 +226,15 @@
         }
     }
 
-
-
     window.addEventListener('message', function (e) {
-        if (vehicle == null) {
-            return
-        }
         const data = e.data
+
+        // User has changed options
+        if ("options" in data) {
+            // Call init once we have some options
+            options = data.options
+            init()
+        }
 
         // Incoming MAVLink message
         if ("MAVLink" in data) {
