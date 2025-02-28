@@ -5,10 +5,28 @@ pos_plot = {}
 vel_plot = {}
 accel_plot = {}
 jerk_plot = {}
+wp_pos_plot = {}
 function initial_load()
 {
     const time_scale_label = "Time (s)";
     let plot;
+
+    // Waypoints
+    wp_pos_plot.data = [{ type:'scatter3d',  x:[], y:[], z:[], name: 'path', mode: 'lines+markers', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }]
+
+    wp_pos_plot.layout = {
+        legend: { itemclick: false, itemdoubleclick: false },
+        margin: { b: 50, l: 60, r: 50, t: 20 },
+        scene: {
+            xaxis: { title: {text: "East (m)" } },
+            yaxis: { title: {text: "North (m)" } },
+            zaxis: { title: {text: "Up (m)" } }
+        }
+    }
+
+    plot = document.getElementById("waypoint_plot")
+    Plotly.purge(plot)
+    Plotly.newPlot(plot, wp_pos_plot.data, wp_pos_plot.layout, { displaylogo: false })
 
     // Acceleration
     jerk_plot.data = [{ x:[], y:[], name: 'Dumb', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
@@ -104,442 +122,351 @@ function initial_load()
     // ])
 }
 
-function update_mode(params)
+// Utility functions
+function isZero(value)
 {
-
-    // Enable all
-    for (const id of Object.values(params)) {
-        document.getElementById(id).disabled = false
-    }
-    document.getElementById("ATC_INPUT_TC").disabled = false
-    document.getElementById("desired_pos").disabled = false
-    document.getElementById("desired_vel").disabled = false
-
-
-    const mode = document.querySelector('input[name="mode"]:checked').value
-    switch (mode) {
-        case "angle":
-            document.getElementById(params.rate_tc).disabled = true
-            document.getElementById("desired_vel").disabled = true
-            return { use_pos: true, use_vel: false }
-
-        case "rate":
-            document.getElementById("ATC_INPUT_TC").disabled = true
-            document.getElementById("desired_pos").disabled = true
-            return { use_pos: false, use_vel: true }
-
-        case "angle+rate":
-            document.getElementById(params.rate_tc).disabled = true
-            return { use_pos: true, use_vel: true }
-    }
+    return !(Math.abs(value) > 0.0);
 }
 
-function radians(deg)
+function isPositive(value)
 {
-    return deg * (M_PI/180)
+    return value > 0;
 }
 
-function degrees(rad)
+function vectorLength(v)
 {
-    return rad * (180/M_PI)
+    return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
-function is_positive(x)
+function vectorLengthSquared(v)
 {
-    return x > 0.0
+    return v.x * v.x + v.y * v.y + v.z * v.z;
 }
 
-function is_negative(x)
+function normalizeVector(v)
 {
-    return x < 0.0
+    let length = this.vectorLength(v);
+    return length > 0 ? { x: v.x / length, y: v.y / length, z: v.z / length } : { x: 0, y: 0, z: 0 };
 }
 
-function is_zero(x)
+function subtractVectors(v1, v2)
 {
-    return !is_negative(x) && !is_positive(x)
+    return { x: v1.x - v2.x, y: v1.y - v2.y, z: v1.z - v2.z };
 }
 
-function constrain_float(amt, low, high)
+function isEqual (v1, v2)
 {
-    if (amt < low) {
-        return low
+    return isZero(v1-v2);
+}
+
+
+class SCurve {
+    constructor() {
+        this.init();
     }
 
-    if (amt > high) {
-        return high
+    // Initialization function
+    init() {
+        this.snap_max = 0.0;
+        this.jerk_max = 0.0;
+        this.accel_max = 0.0;
+        this.vel_max = 0.0;
+        this.time = 0.0;
+        this.num_segs = 0;
+        this.segment = [];
+        this.track = { x: 0, y: 0, z: 0 };
+        this.delta_unit = { x: 0, y: 0, z: 0 };
+        this.position_sq = 0.0;
     }
 
-    return amt
-}
+    // Calculate track motion profile between two 3D points
+    calculateTrack(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z, snap_maximum, jerk_maximum) {
+        this.init();
 
-function sq(x)
-{
-    return Math.pow(x, 2.0)
-}
-
-function safe_sqrt(x)
-{
-    let ret = Math.sqrt(x)
-    if (Number.isNaN(ret)) {
-        return 0
-    }
-    return ret
-}
-
-function linspace(start, end, num)
-{
-    const result = [];
-    const step = (end - start) / (num - 1);
-
-    for (let i = 0; i < num; i++) {
-      result.push(start + (step * i));
-    }
-
-    return result;
-}
-
-function calc_peak_jerk_required(tj, A0, A1)
-{
-    return (A1 - A0) * 2.0 / tj;
-}
-
-function calculateAlpha1(P0, P2, V0, V2, A0, A2, Alpha2, tj) {
-    const pi = Math.PI;
-
-    // Calculate the alpha factor
-    const alphaFactor = (4 / 3) - (2 / (pi * pi));
-
-    // Rearranged equation for alpha1
-    const numerator = -(P0 - P2) - 2 * (V0 - V2) * tj - 2 * (A0 - A2) * tj * tj;
-    const denominator = Math.pow(tj, 3) * alphaFactor;
-
-    const Alpha1 = Alpha2 + (numerator / denominator);
-
-    return Alpha1;
-}
-
-function fwd_project_position(P0, V0, A0, alpha1, tj)
-{
-    return P0 + 2 * V0 * tj + 2 * A0 * tj * tj + alpha1 * tj * tj *tj * (4/3 - 2 / (M_PI * M_PI))
-}
-
-function back_project_position(P0, V0, A0, Alpha, tj)
-{
-    const pi = Math.PI;
-
-    // Calculate terms
-    const term1 = P0;
-    const term2 = 2 * V0 * tj;
-    const term3 = 2 * A0 * tj * tj;
-    const term4 = (-2 * Alpha * tj) / (pi * pi);
-    const term5 = Alpha * tj * tj * tj * (4 / 3 - 2 / (pi * pi));
-
-    // Calculate the final position
-    const Pt = term1 + term2 + term3 + term4 + term5;
-
-    return Pt;
-}
-
-function calc_alpha2_from_peak_accel(Am, A0, tj)
-{
-    return (Am - A0) / (2 * tj)
-}
-
-function calc_alpha1_from_peak_accel(Am, A0, tj)
-{
-    return (Am - A0) / (2 * tj)
-}
-
-function calc_alpha2_halfway_conditions(A0, V0, P0, P1, tj)
-{
-    var alpha = 0
-    for (var i = 0; i<1; i++) {
-        const numerator = P1 - P0 - (2 * V0 * tj) - (2 * A0 * tj *tj);
-        const denominator = tj * tj * tj * (4/3 - 2/(M_PI*M_PI))
-        const est = numerator / denominator
-        if (alpha == 0) {
-            alpha = est;
-        } else {
-            alpha = alpha*0.8 + est*0.2;
+        // Compute vector between origin and destination
+        let track_temp = subtractVectors(destination, origin);
+        if (isZero(track_temp) || isZero(vectorLengthSquared(track_temp))) {
+            return;
         }
-        // calculate the forward projection and adapt the initial connditions
-        [J1_est, A1_est, V1_est, P1_est] = calc_javp_for_segment_incr_jerk(tj*2.0, tj, alpha/2, A0, V0, P0);
-        const error = P1 - P1_est
-        P1 = P1*0.7 + P1_est*0.3
-    }
-    return alpha
-}
 
+        this.snap_max = snap_maximum;
+        this.jerk_max = jerk_maximum;
 
-function calculateAlpha2_from_diff(P0, P2, V0, V2, A0, A2, Alpha1, tj) {
-    const pi = Math.PI;
+        this.setKinematicLimits(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z);
 
-    // Calculate the alpha factor
-    const alphaFactor = (4 / 3) - (2 / (pi * pi));
+        if (!isPositive(this.snap_max) || !isPositive(this.jerk_max) || 
+            !isPositive(this.accel_max) || !isPositive(this.vel_max)) {
+            console.error("SCurve: Invalid kinematic parameters");
+            return;
+        }
 
-    // Rearranged equation for alpha1
-    const numerator = (P0 - P2) + 2 * (V0 - V2) * tj + 2 * (A0 - A2) * tj * tj;
-    const denominator = Math.pow(tj, 3) * alphaFactor;
+        this.track = track_temp;
+        const track_length = vectorLength(this.track);
 
-    const Alpha2 = Alpha1 + (numerator / denominator);
+        if (isZero(track_length)) {
+            this.delta_unit = { x: 0, y: 0, z: 0 };
+        } else {
+            this.delta_unit = normalizeVector(this.track);
+            this.addSegments(track_length);
+        }
 
-    return Alpha2;
-}
-
-// special handling function to adapt the enumbent s-curve maths to fit the trajectory of the autorotation
-function arot_s_curve(time_now, T, Jm, A0, V0, P0, Af)
-{
-    // The 1/4 time is because S-curve definition expects the time period in a different factor to what we need in the autorotation
-    tj = T * 0.25;
-
-    // handle the positive jerk (increasing accel in the first half of the flare time)
-    if (time_now <= tj*2.0) {
-        return calc_javp_for_segment_incr_jerk(time_now, tj, Jm, A0, V0, P0);
+        if (!this.isValid()) {
+            console.error("SCurve: Invalid path calculation");
+            this.init();
+        }
     }
 
-    // if we got this far then we are doing the negative jerk portion of the trajectory
-    // first we need to calculate the initial conditions of the negative trajectory, these are the exit conditions of the positive jerk trajectory
-    let [J1, A1, V1, P1] = calc_javp_for_segment_incr_jerk(tj*2.0, tj, Jm, A0, V0, P0);
+    // Set kinematic limits
+    setKinematicLimits(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z) {
+        speed_xy = Math.abs(speed_xy);
+        speed_up = Math.abs(speed_up);
+        speed_down = Math.abs(speed_down);
+        accel_xy = Math.abs(accel_xy);
+        accel_z = Math.abs(accel_z);
 
-    // calculate the peak jerk requried to achieve the requested exit conditions
-    let JM_sec_phase = calc_peak_jerk_required(tj*2.0, A1, Af);
-    let t_sec_phase = time_now - tj*2.0;
-    return calc_javp_for_segment_incr_jerk(t_sec_phase, tj, JM_sec_phase, A1, V1, P1);
-}
-
-// special handling function to adapt the enumbent s-curve maths to fit the trajectory of the autorotation
-function arot_calculated_s_curve(time_now, T, A0, V0, P0, A2, V2, P2, Jm1, Jm2)
-{
-    // The 1/4 time is because S-curve definition expects the time period in a different factor to what we need in the autorotation
-    tj = T * 0.25;
-
-    // handle the positive jerk (increasing accel in the first half of the flare time)
-    if (time_now <= tj*2.0) {
-        return calc_javp_for_segment_incr_jerk(time_now, tj, Jm1, A0, V0, P0);
+        let direction = subtractVectors(destination, origin);
+        this.vel_max = this.kinematicLimit(direction, speed_xy, speed_up, speed_down);
+        this.accel_max = this.kinematicLimit(direction, accel_xy, accel_z, accel_z);
     }
 
-    // if we got this far then we are doing the negative jerk portion of the trajectory
-    // first we need to calculate the initial conditions of the negative trajectory, these are the exit conditions of the positive jerk trajectory
-    let [J1, A1, V1, P1] = calc_javp_for_segment_incr_jerk(tj*2.0, tj, Jm1, A0, V0, P0);
+    // Add trajectory segments
+    addSegments(track_length) {
+        if (this.isZero(track_length)) return;
 
-    let t_sec_phase = time_now - tj*2.0;
+        let Jm, tj, t2, t4, t6;
+        this.calculatePath(this.snap_max, this.jerk_max, 0.0, this.accel_max, this.vel_max, track_length * 0.5, Jm, tj, t2, t4, t6);
 
-    return calc_javp_for_segment_incr_jerk(t_sec_phase, tj, Jm2, A1, V1, P1);
-}
+        this.segment.push({ type: "INCR_JERK", jerk: Jm, duration: tj });
+        this.segment.push({ type: "CONST_JERK", jerk: 0.0, duration: t4 });
+        this.segment.push({ type: "DECR_JERK", jerk: -Jm, duration: t6 });
 
-// Calculate the jerk, acceleration, velocity and position at time time_now when running the increasing jerk magnitude time segment based on a raised cosine profile
-function calc_javp_for_segment_incr_jerk(time_now, tj, Jm, A0, V0, P0)
-{
-    var Jt = 0.0, At = A0, Vt = V0, Pt = P0;
-    if (!is_positive(tj)) {
-        return [Jt, At, Vt, Pt];
+        // Add a constant speed phase
+        this.segment.push({ type: "CONST_VELOCITY", jerk: 0.0, duration: track_length / this.vel_max });
+
+        // Deceleration phase
+        this.segment.push({ type: "DECR_JERK", jerk: -Jm, duration: t6 });
+        this.segment.push({ type: "CONST_JERK", jerk: 0.0, duration: t4 });
+        this.segment.push({ type: "INCR_JERK", jerk: Jm, duration: t2 });
     }
-    const Alpha = Jm * 0.5;
-    const Beta = M_PI / tj;
-    Jt = Alpha * (1.0 - Math.cos(Beta * time_now));
-    At = A0 + Alpha * time_now - (Alpha / Beta) * Math.sin(Beta * time_now);
-    Vt = V0 + A0 * time_now + (Alpha * 0.5) * (time_now * time_now) + (Alpha / (Beta * Beta)) * Math.cos(Beta * time_now) - Alpha / (Beta * Beta);
-    Pt = P0 + V0 * time_now + 0.5 * A0 * (time_now * time_now) + (-Alpha / (Beta * Beta)) * time_now + Alpha * (time_now * time_now * time_now) / 6.0 + (Alpha / (Beta * Beta * Beta)) * Math.sin(Beta * time_now);
-    return [Jt, At, Vt, Pt];
-}
 
-// allowing for alpha1, alpha2, and peak accel (A1) to be resolved
-function three_var_prediction(P0, P2, V0, V2, A0, A2, tj)
-{
-    const c1 = 4 / 3 - 2 / (M_PI*M_PI);
+    // Calculate jerk, acceleration, velocity, position for a segment
+    getJAVPAtTime(time_now) {
+        let Jt = 0, At = 0, Vt = 0, Pt = 0;
 
-    // Calculate alpha1
-    const term1 = (V2 - V0) / (2 * tj * tj);
-    const term2 = -2 * A0 / tj;
-    const term3 = (P2 - P0) / (tj * tj * tj * c1);
-    const term4 = 2 * (V2 - V0) / (tj * tj * c1);
-    const term5 = 2 * (A2 - A0) / (tj * c1);
-    alpha1 = 0.25 * term1 + term2 + term3 + term4 + term5;
+        for (let segment of this.segment) {
+            if (time_now < segment.duration) {
+                switch (segment.type) {
+                    case "CONST_JERK":
+                        Jt = segment.jerk;
+                        At += Jt * time_now;
+                        Vt += At * time_now + 0.5 * Jt * Math.pow(time_now, 2);
+                        Pt += Vt * time_now + 0.5 * At * Math.pow(time_now, 2) + (1 / 6) * Jt * Math.pow(time_now, 3);
+                        break;
 
-    // Calculate alpha2
-    const numerator = (P0 - P2) + 2 * (V0 - V2) * tj + 2 * (A0 - A2) * tj * tj;
-    const denominator = tj * tj * tj * c1;
+                    case "INCR_JERK":
+                        Jt = segment.jerk * (1 - Math.cos(Math.PI * time_now / segment.duration));
+                        At += Jt * time_now;
+                        Vt += At * time_now;
+                        Pt += Vt * time_now;
+                        break;
 
-    const alpha2 = alpha1 + (numerator / denominator);
+                    case "DECR_JERK":
+                        Jt = -segment.jerk * (1 - Math.cos(Math.PI * time_now / segment.duration));
+                        At += Jt * time_now;
+                        Vt += At * time_now;
+                        Pt += Vt * time_now;
+                        break;
+                }
+                break;
+            }
+            time_now -= segment.duration;
+        }
 
-    return [alpha1, alpha2];
-}
+        return { Jt, At, Vt, Pt };
+    }
 
+    setOriginSpeedMax(speed) {
+        // If the path is zero length, start speed must be zero
+        if (this.num_segs !== this.segments_max) {
+            return 0.0;
+        }
+    
+        // Avoid recalculating if unnecessary
+        if (isEqual(this.segment[this.SEG_INIT].end_vel, speed)) {
+            return speed;
+        }
+    
+        const Vm = this.segment[this.SEG_ACCEL_END].end_vel;
+        const trackLength = vectorLength(this.track);
+        speed = Math.min(speed, Vm);
+    
+        let Jm, tj, t2, t4, t6;
+        this.calculatePath(this.snap_max, this.jerk_max, speed, this.accel_max, Vm, trackLength * 0.5, Jm, tj, t2, t4, t6);
+    
+        let seg = this.SEG_INIT;
+        this.addSegment(seg, 0.0, "CONSTANT_JERK", 0.0, 0.0, speed, 0.0);
+        this.addSegmentsJerk(seg, tj, Jm, t2);
+        this.addSegmentConstJerk(seg, t4, 0.0);
+        this.addSegmentsJerk(seg, tj, -Jm, t6);
+    
+        // Remove numerical errors
+        this.segment[this.SEG_ACCEL_END].end_accel = 0.0;
+    
+        // Offset acceleration segment if it can't fit in half the original length
+        const dPstart = Math.min(0.0, trackLength * 0.5 - this.segment[this.SEG_ACCEL_END].end_pos);
+        const dt = dPstart / this.segment[this.SEG_ACCEL_END].end_vel;
+        for (let i = this.SEG_INIT; i <= this.SEG_ACCEL_END; i++) {
+            this.segment[i].end_time += dt;
+            this.segment[i].end_pos += dPstart;
+        }
+    
+        // Add empty speed change segments and constant speed segment
+        for (let i = this.SEG_ACCEL_END + 1; i <= this.SEG_SPEED_CHANGE_END; i++) {
+            this.segment[i].seg_type = "CONSTANT_JERK";
+            this.segment[i].jerk_ref = 0.0;
+            this.segment[i].end_time = this.segment[this.SEG_ACCEL_END].end_time;
+            this.segment[i].end_accel = 0.0;
+            this.segment[i].end_vel = this.segment[this.SEG_ACCEL_END].end_vel;
+            this.segment[i].end_pos = this.segment[this.SEG_ACCEL_END].end_pos;
+        }
+    
+        seg = this.SEG_CONST;
+        this.addSegmentConstJerk(seg, 0.0, 0.0);
+    
+        this.calculatePath(this.snap_max, this.jerk_max, 0.0, this.accel_max, this.segment[this.SEG_CONST].end_vel, trackLength * 0.5, Jm, tj, t2, t4, t6);
+    
+        this.addSegmentsJerk(seg, tj, -Jm, t6);
+        this.addSegmentConstJerk(seg, t4, 0.0);
+        this.addSegmentsJerk(seg, tj, Jm, t2);
+    
+        // Remove numerical errors
+        this.segment[this.SEG_DECEL_END].end_accel = 0.0;
+        this.segment[this.SEG_DECEL_END].end_vel = Math.max(0.0, this.segment[this.SEG_DECEL_END].end_vel);
+    
+        // Adjust constant velocity segment to end at the correct position
+        const dP = Math.max(0.0, trackLength - this.segment[this.SEG_DECEL_END].end_pos);
+        const t15 = dP / this.segment[this.SEG_CONST].end_vel;
+        for (let i = this.SEG_CONST; i <= this.SEG_DECEL_END; i++) {
+            this.segment[i].end_time += t15;
+            this.segment[i].end_pos += dP;
+        }
+    
+        // Catch calculation errors
+        if (!this.isValid()) {
+            console.error("SCurve::setOriginSpeedMax invalid path");
+            this.init();
+            return 0.0;
+        }
+    
+        return speed;
+    }
 
-function v4_prediction(A0, A1, V0, V2, tj)
-{
-    const alpha1 = (A1 - A0) / (2 * tj);
+    kinematicLimit(direction, speed_xy, speed_up, speed_down) {
+        let xy_speed = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+        let vertical_speed = Math.abs(direction.z) > 0 ? (direction.z > 0 ? speed_up : speed_down) : 0;
+        return Math.sqrt(xy_speed * xy_speed + vertical_speed * vertical_speed);
+    }
 
-    const term1 = (V2 - V0) / (2 * tj * tj);
-    const term2 = (A1 - A0) / tj;
-    const alpha2 = term1 + term2 - alpha1;
+    isValid() {
+        return this.segment.length > 0;
+    }
 
-    return [alpha1, alpha2]
-}
-
-// Calculate the jerk, acceleration, velocity and position at time time_now when running the decreasing jerk magnitude time segment based on a raised cosine profile
-// function calc_javp_for_segment_decr_jerk(time_now, tj, Jm, A0, V0, P0)
-// {
-//     var Jt = 0.0, At = A0, Vt = V0, Pt = P0;
-//     if (!is_positive(tj)) {
-//         return [Jt, At, Vt, Pt];
-//     }
-//     const Alpha = Jm * 0.5;
-//     const Beta = M_PI / tj;
-//     const AT = Alpha * tj;
-//     const VT = Alpha * ((tj * tj) * 0.5 - 2.0 / (Beta * Beta));
-//     const PT = Alpha * ((-1.0 / (Beta * Beta)) * tj + (1.0 / 6.0) * (tj * tj * tj));
-//     Jt = Alpha * (1.0 - Math.cos(Beta * (time_now + tj)));
-//     At = (A0 - AT) + Alpha * (time_now + tj) - (Alpha / Beta) * Math.sin(Beta * (time_now + tj));
-//     Vt = (V0 - VT) + (A0 - AT) * time_now + 0.5 * Alpha * (time_now + tj) * (time_now + tj) + (Alpha / (Beta * Beta)) * Math.cos(Beta * (time_now + tj)) - Alpha / (Beta * Beta);
-//     Pt = (P0 - PT) + (V0 - VT) * time_now + 0.5 * (A0 - AT) * (time_now * time_now) + (-Alpha / (Beta * Beta)) * (time_now + tj) + (Alpha / 6.0) * (time_now + tj) * (time_now + tj) * (time_now + tj) + (Alpha / (Beta * Beta * Beta)) * Math.sin(Beta * (time_now + tj));
-//     return [Jt, At, Vt, Pt];
-// }
-
-class Trajectory
-{
-    constructor()
-    {
-        this.j = []; // jerk (m/s/s/s)
-        this.a = []; // accel (m/s/s)
-        this.v = []; // vel (m/s)
-        this.p = []; // pos (m)
+    debug() {
+        console.log("Segments:", this.segment);
+        console.log("Kinematics: ", { snap_max: this.snap_max, jerk_max: this.jerk_max, accel_max: this.accel_max, vel_max: this.vel_max });
     }
 }
 
-// function update_initial_position()
-// {
-//     const P2 = parseFloat(document.getElementById("final_pos").value);
-//     const P0 = parseFloat(document.getElementById("initial_pos").value);
-//     console.log(P0)
-//     console.log(P2)
-//     document.getElementById("initial_pos").value = P0 + P2;
-//     run_flare()
-// }
+// Example Usage
+// let curve = new SCurve();
+// curve.calculateTrack({ x: 0, y: 0, z: 0 }, { x: 10, y: 10, z: 5 }, 5, 2, 2, 1, 1, 0.1, 0.05);
+// curve.debug();
+
+class Vector {
+    constructor(x, y, z) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+
+    get_array() {
+        return [this.x, this.y, this.z];
+    }
+}
 
 
 function run_flare()
 {
-    const A0 = parseFloat(document.getElementById("inital_accel").value);
-    const V0 = parseFloat(document.getElementById("initial_vel").value);
-    var P0 = parseFloat(document.getElementById("initial_pos").value);
 
-    const A2 = parseFloat(document.getElementById("final_accel").value);
-    const V2 = parseFloat(document.getElementById("final_vel").value);
-    const P2 = parseFloat(document.getElementById("final_pos").value);
+    let point1 = new Vector(parseFloat(document.getElementById("last_wp_x").value),
+                            parseFloat(document.getElementById("last_wp_y").value),
+                            parseFloat(document.getElementById("last_wp_z").value));
 
-    const Jm = parseFloat(document.getElementById("max_jerk").value);
-    const T = parseFloat(document.getElementById("flare_time").value);
-    const AZm = parseFloat(document.getElementById("max_vert_accel").value);
+    let point2 = new Vector(parseFloat(document.getElementById("curr_wp_x").value),
+                            parseFloat(document.getElementById("curr_wp_y").value),
+                            parseFloat(document.getElementById("curr_wp_z").value));
 
-    // var pred_P1 = fwd_project_position(P0, V0, A0, 13.0/2.0, T*0.25) // This matches
-    // console.log(`Predicted P1 = ${pred_P1} m`);
+    let point3 = new Vector(parseFloat(document.getElementById("next_wp_x").value),
+                            parseFloat(document.getElementById("next_wp_y").value),
+                            parseFloat(document.getElementById("next_wp_z").value));
 
-    // let [J1_pred, A1_pred, V1_pred, P1_pred] = calc_javp_for_segment_incr_jerk(T*0.5, T*0.25, 19, A2, V2, P2) // --- this is giving the correct answer
-    // console.log(`javp Predicted P1 = ${P1_pred+0.07599} m`);
-
-    // init a time vector
-    const t = linspace(0.0, T, 1000);
-
-
-
-    let alpha2_pred = calc_alpha2_from_peak_accel(AZm, A2, T*0.25);
-    let jm2 = alpha2_pred*2.0;
-    console.log(`Jm 2 Predicition = ${jm2.toFixed(4)} (m/s³)`);
-
-    var alpha1_pred = calculateAlpha1(P0, P2, V0, V2, A0, A2, alpha2_pred, T*0.25) // <------ this works!!!!!!!!!!!!, fuck yeah!
-    var jm1 = alpha1_pred*2;
-    console.log(`Jm 1 Predicition = ${jm1.toFixed(4)} (m/s³)`);
-
-    // V2 calculation
-    // use the max accel available to apply the breaks
-    const alpha_1_v2 = calc_alpha1_from_peak_accel(AZm, A0, T*0.25)
-    const jm1_v2 = alpha_1_v2*2.0;
-    console.log(`Jm 1 V2 Predicition = ${jm1_v2.toFixed(4)} (m/s³)`);
-
-    // now calculate the alpha2 required to meet my requested exit conditions
-    let [J1_v2, A1_v2, V1_v2, P1_v2] = calc_javp_for_segment_incr_jerk(T*0.5, T*0.25, jm1_v2, A0, V0, P0);
-    // const alpha_2_v2 = calc_alpha2_halfway_conditions(A2, V2, P2, P1_v2, -T*0.25);
-    // const alpha_2_v2 = calc_alpha2_halfway_conditions(A1_v2, V1_v2, P1_v2, P2, T*0.25);
-    console.log(P2)
-    console.log(V2)
-    console.log(A2)
-    // const alpha_2_v2 = calculateAlpha2_from_diff(P0, P2, V0, V2, A0, A2, alpha_1_v2, T*0.25) 
-    const alpha_2_v2 = calc_alpha1_from_peak_accel(A2, AZm, T*0.25)
-    const jm2_v2 = alpha_2_v2*2.0;
-    console.log(`Jm 2 V2 Predicition = ${jm2_v2.toFixed(4)} (m/s³)`);
-
-    // we know how far the vehicle will travel, so we will specify the initiating position based on 
-    // the final desired position and the projected distance to be traveled
-    let [J2_v2, A2_v2, V2_v2, P2_v2] = calc_javp_for_segment_incr_jerk(T*0.5, T*0.25, jm2_v2, A1_v2, V1_v2, P1_v2)
-    // update the initial position
-    // P0 = P0 - P2_v2
-    // console.log(P1_v2)
-    // console.log(P2_v2)
-    // document.getElementById("initial_pos").value = P0
+    const snap_max = parseFloat(document.getElementById("snap_max").value);
+    const jerk_max = parseFloat(document.getElementById("max_jerk").value);
+    const accel_z_max = parseFloat(document.getElementById("accel_z_max").value);
+    const accel_xy_max = parseFloat(document.getElementById("accel_xy_max").value);
+    const speed_xy_max = parseFloat(document.getElementById("speed_xy_max").value);
+    const speed_z_up = parseFloat(document.getElementById("speed_z_up").value);
+    const speed_z_down = parseFloat(document.getElementById("speed_z_down").value);
 
 
-    let [alpha1_v3, alpha2_v3] = three_var_prediction(P0, P2, V0, V2, A0, A2, T*0.25);
-    const jm1_v3 = alpha1_v3*2.0;
-    const jm2_v3 = alpha2_v3*2.0;
-    console.log(`Jm 1 V3 Predicition = ${jm1_v3.toFixed(4)} (m/s³)`);
-    console.log(`Jm 2 V3 Predicition = ${jm2_v3.toFixed(4)} (m/s³)`);
+    const origin_speed = parseFloat(document.getElementById("initial_vel").value);
 
 
-    let [alpha1_v4, alpha2_v5] = v4_prediction(A0, AZm, V0, V2, T*0.25);
-    const jm1_v4 = alpha1_v4*2.0;
-    const jm2_v4 = alpha2_v5*2.0;
-    console.log(`Jm 1 V3 Predicition = ${jm1_v4.toFixed(4)} (m/s³)`);
-    console.log(`Jm 2 V3 Predicition = ${jm2_v4.toFixed(4)} (m/s³)`);
+    let scurve_this_leg = new SCurve();
 
-    // updated method that calculates the neccassary jerk peaks to achieve the entry and exit conditions
-    // "smart" method
-    var calcd_traj = new Trajectory();
-    for (var i = 0; i < t.length; i++) {
-        // calculate the variables for the trajectory
-        // const [Jt, At, Vt, Pt] = arot_calculated_s_curve(t[i], T, A0, V0, P0, A2, V2, P2, jm1, -jm2);
-        // const [Jt, At, Vt, Pt] = arot_calculated_s_curve(t[i], T, A0, V0, P0, A2, V2, P2, -jm1_v3, jm2_v3);
-        const [Jt, At, Vt, Pt] = arot_calculated_s_curve(t[i], T, A0, V0, P0, A2, V2, P2, jm1_v4, -jm2_v4);
-        calcd_traj.j.push(Jt);
-        calcd_traj.a.push(At);
-        calcd_traj.v.push(Vt);
-        calcd_traj.p.push(Pt);
+    scurve_this_leg.calculateTrack(point1, point2, speed_xy_max, speed_z_up, speed_z_down, accel_xy_max, accel_z_max, snap_max, jerk_max);
+
+
+    if (!isZero(origin_speed)) {
+        // rebuild start of scurve if we have a non-zero origin speed
+        scurve_this_leg.setOriginSpeedMax(origin_speed);
     }
 
-    // dumb original method
-    var traj = new Trajectory();
-    for (var i = 0; i < t.length; i++) {
-        // calculate the variables for the trajectory
-        const [Jt, At, Vt, Pt] = arot_s_curve(t[i], T, Jm, A0, V0, P0, A2);
-        traj.j.push(Jt);
-        traj.a.push(At);
-        traj.v.push(Vt);
-        traj.p.push(Pt);
-    }
+
+
+
 
     // Update plots
-    jerk_plot.data[0].x = t
-    jerk_plot.data[0].y = traj.j
-    jerk_plot.data[1].x = t
-    jerk_plot.data[1].y = calcd_traj.j
-    Plotly.redraw("jerk_plot")
+    wp_pos_plot.data[0].x = [point1.x, point2.x, point3.x];
+    wp_pos_plot.data[0].y = [point1.y, point2.y, point3.y];
+    wp_pos_plot.data[0].z = [point1.z, point2.z, point3.z];
 
-    accel_plot.data[0].x = t
-    accel_plot.data[0].y = traj.a
-    accel_plot.data[1].x = t
-    accel_plot.data[1].y = calcd_traj.a
-    Plotly.redraw("accel_plot")
+    Plotly.redraw("waypoint_plot")
 
-    vel_plot.data[0].x = t
-    vel_plot.data[0].y = traj.v
-    vel_plot.data[1].x = t
-    vel_plot.data[1].y = calcd_traj.v
-    Plotly.redraw("vel_plot")
+    // jerk_plot.data[0].x = t
+    // jerk_plot.data[0].y = traj.j
+    // jerk_plot.data[1].x = t
+    // jerk_plot.data[1].y = calcd_traj.j
+    // Plotly.redraw("jerk_plot")
 
-    pos_plot.data[0].x = t
-    pos_plot.data[0].y = traj.p
-    pos_plot.data[1].x = t
-    pos_plot.data[1].y = calcd_traj.p
-    Plotly.redraw("pos_plot")
+    // accel_plot.data[0].x = t
+    // accel_plot.data[0].y = traj.a
+    // accel_plot.data[1].x = t
+    // accel_plot.data[1].y = calcd_traj.a
+    // Plotly.redraw("accel_plot")
+
+    // vel_plot.data[0].x = t
+    // vel_plot.data[0].y = traj.v
+    // vel_plot.data[1].x = t
+    // vel_plot.data[1].y = calcd_traj.v
+    // Plotly.redraw("vel_plot")
+
+    // pos_plot.data[0].x = t
+    // pos_plot.data[0].y = traj.p
+    // pos_plot.data[1].x = t
+    // pos_plot.data[1].y = calcd_traj.p
+    // Plotly.redraw("pos_plot")
 
 }
+
+
