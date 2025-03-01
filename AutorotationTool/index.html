@@ -37,7 +37,7 @@
 <table>
   <tr>
     <td>
-      <fieldset style="width:245px;height:120px">
+      <fieldset style="width:150px;height:100px">
         <legend>Position 1
             <img id="TT" src="../images/question-circle.svg" style="width: 1em; vertical-align: bottom" 
             data-tippy-content='Waypoint that the vehicle is moving away from',
@@ -45,24 +45,24 @@
         </legend>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="last_wp_x" value="30" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="last_wp_x">North (m)</label>
+          <input type="number" id="first_wp_y" value="0" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="first_wp_y">North (m)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="last_wp_y" value="0" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="last_wp_y">East (m)</label>
+          <input type="number" id="first_wp_x" value="0" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="first_wp_x">East (m)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="last_wp_z" value="50" min="0" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="last_wp_z">Up (m)</label>
+          <input type="number" id="first_wp_z" value="50" min="0" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="first_wp_z">Up (m)</label>
         </p>
       </fieldset>
     </td>
 
     <td>
-      <fieldset style="width:245px;height:120px">
+      <fieldset style="width:150px;height:100px">
         <legend>Position 2
             <img id="TT" src="../images/question-circle.svg" style="width: 1em; vertical-align: bottom" 
             data-tippy-content='Waypoint that the vehicle is moving toward',
@@ -70,13 +70,13 @@
         </legend>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="curr_wp_x" value="50" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="curr_wp_x">North (m)</label>
+          <input type="number" id="curr_wp_y" value="50" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="curr_wp_y">North (m)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="curr_wp_y" value="50" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="curr_wp_y">East (m)</label>
+          <input type="number" id="curr_wp_x" value="50" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="curr_wp_x">East (m)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
@@ -87,7 +87,7 @@
     </td>
 
     <td>
-      <fieldset style="width:245px;height:120px">
+      <fieldset style="width:150px;height:100px">
         <legend>Position 3
             <img id="TT" src="../images/question-circle.svg" style="width: 1em; vertical-align: bottom" 
             data-tippy-content='Next waypoint in mission sequence, after current is waypoint is achieved',
@@ -95,18 +95,43 @@
         </legend>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="next_wp_x" value="70" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="next_wp_x">North (m)</label>
+          <input type="number" id="next_wp_y" value="70" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="next_wp_y">North (m)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="next_wp_y" value="20" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
-          <label for="next_wp_y">East (m)</label>
+          <input type="number" id="next_wp_x" value="35" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="next_wp_x">East (m)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
           <input type="number" id="next_wp_z" value="40" min="0" step="5" max="100" style="width: 50px" onchange="run_flare()">
           <label for="next_wp_z">Up (m)</label>
+        </p>
+      </fieldset>
+    </td>
+
+    <td>
+      <fieldset style="width:150px;height:100px">
+        <legend>Position 4
+            <img id="TT" src="../images/question-circle.svg" style="width: 1em; vertical-align: bottom" 
+            data-tippy-content='Next waypoint in mission sequence, after current is waypoint is achieved',
+            data-tippy-maxWidth='750px'/>
+        </legend>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="last_wp_y" value="100" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="last_wp_y">North (m)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="last_wp_x" value="20" min="-100" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="last_wp_x">East (m)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="last_wp_z" value="40" min="0" step="5" max="100" style="width: 50px" onchange="run_flare()">
+          <label for="last_wp_z">Up (m)</label>
         </p>
       </fieldset>
     </td>
@@ -166,7 +191,7 @@
     </td>
 
     <td>
-      <fieldset style="width:300px;height:240px">
+      <fieldset style="width:300px;height:600px">
         <legend>Parameters
             <img id="TT" src="../images/question-circle.svg" style="width: 1em; vertical-align: bottom" 
             data-tippy-content='The parameter values that the user has to define the curve',
@@ -174,38 +199,88 @@
         </legend>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="snap_max" value="2" min="1" step="0.1" max="15" style="width: 50px" onchange="run_flare()">
-          <label for="snap_max">Snap Max (m/s4)</label>
+          <input type="number" id="psc_max_jerk_xy" value="5.0" min="1.0" step="0.5" max="20.0" style="width: 50px" onchange="run_flare()">
+          <label for="psc_max_jerk_xy">PSC_JERK_XY (m/s³)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="max_jerk" value="13" min="1.0" step="0.5" max="30" style="width: 50px" onchange="run_flare()">
-          <label for="max_jerk">Max Jerk Mag (m/s³)</label>
+          <input type="number" id="psc_max_jerk_z" value="5.0" min="5.0" step="0.5" max="50.0" style="width: 50px" onchange="run_flare()">
+          <label for="psc_max_jerk_z">PSC_JERK_Z (m/s³)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="accel_z_max" value="9.5" min="1.0" step="0.1" max="30" style="width: 50px" onchange="run_flare()">
-          <label for="accel_z_max">Max Vert Accel Mag (m/s²)</label>
+          <input type="number" id="wpnav_max_jerk" value="1.0" min="1.0" step="0.5" max="20.0" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_max_jerk">WPNAV_JERK (m/s³)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="accel_xy_max" value="9.5" min="1.0" step="0.1" max="30" style="width: 50px" onchange="run_flare()">
-          <label for="accel_xy_max">Max XY Accel Mag (m/s²)</label>
+          <input type="number" id="wpnav_accel_z_max" value="100" min="50" step="50" max="500" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_accel_z_max">WPNAV_ACCEL_Z (cm/s²)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="speed_xy_max" value="9.5" min="1.0" step="0.1" max="30" style="width: 50px" onchange="run_flare()">
-          <label for="speed_xy_max">Max XY Speed (m/s)</label>
+          <input type="number" id="wpnav_accel_xy_max" value="250" min="50" step="50" max="500" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_accel_xy_max">WPNAV_ACCEL (cm/s²)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="speed_z_up" value="9.5" min="1.0" step="0.1" max="30" style="width: 50px" onchange="run_flare()">
-          <label for="speed_z_up">Max Speed Up (m/s)</label>
+          <input type="number" id="wpnav_accel_c_max" value="250" min="50" step="50" max="500" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_accel_c_max">WPNAV_ACCEL_C (cm/s²)</label>
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
-          <input type="number" id="speed_z_down" value="9.5" min="1.0" step="0.1" max="30" style="width: 50px" onchange="run_flare()">
-          <label for="speed_z_down">Max Speed Down (m/s)</label>
+          <input type="number" id="wpnav_speed_xy_max" value="1000" min="10" step="10" max="2000" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_speed_xy_max">WPNAV_SPEED (cm/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="wpnav_speed_z_up" value="250" min="10" step="10" max="1000" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_speed_z_up">WPNAV_SPEED_UP (cm/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="wpnav_speed_z_dn" value="150" min="10" step="10" max="500" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_speed_z_dn">WPNAV_SPEED_DN (cm/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="wpnav_radius" value="200" min="5" step="50" max="1000" style="width: 50px" onchange="run_flare()">
+          <label for="wpnav_radius">WPNAV_RADIUS (cm)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="psc_lean_angle_max" value="0" min="0" step="1" max="45" style="width: 50px" onchange="run_flare()">
+          <label for="psc_lean_angle_max">PSC_ANGLE_MAX (deg)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="lean_angle_max" value="3000" min="1000" step="100" max="8000" style="width: 50px" onchange="run_flare()">
+          <label for="lean_angle_max">ANGLE_MAX (cdeg)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="atc_accel_roll_max" value="110000" min="0" step="30000" max="162000" style="width: 50px" onchange="run_flare()">
+          <label for="atc_accel_roll_max">ATC_ACCEL_R_MAX (cdeg/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="atc_accel_pitch_max" value="110000" min="0" step="30000" max="162000" style="width: 50px" onchange="run_flare()">
+          <label for="atc_accel_pitch_max">ATC_ACCEL_P_MAX (cdeg/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="atc_roll_rate_max" value="0" min="0" step="60" max="360" style="width: 50px" onchange="run_flare()">
+          <label for="atc_roll_rate_max">ATC_RATE_R_MAX (deg/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="atc_pitch_rate_max" value="0" min="0" step="60" max="360" style="width: 50px" onchange="run_flare()">
+          <label for="atc_pitch_rate_max">ATC_RATE_P_MAX (deg/s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="atc_input_tc" value="0.15" min="0.05" step="0.05" max="0.5" style="width: 50px" onchange="run_flare()">
+          <label for="atc_input_tc">ATC_INPUT_TC (s)</label>
         </p>
 
       </fieldset>
