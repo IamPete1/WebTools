@@ -135,30 +135,14 @@ function is_positive(value)
     return value >= FLT_EPSILON;
 }
 
-function vectorLength(v)
+function is_negative(value)
 {
-    return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    return value <= -1.0 * FLT_EPSILON;
 }
 
-function vectorLengthSquared(v)
+function is_equal(v1, v2)
 {
-    return v.x * v.x + v.y * v.y + v.z * v.z;
-}
-
-function normalizeVector(v)
-{
-    let length = this.vectorLength(v);
-    return length > 0 ? { x: v.x / length, y: v.y / length, z: v.z / length } : { x: 0, y: 0, z: 0 };
-}
-
-function subtractVectors(v1, v2)
-{
-    return { x: v1.x - v2.x, y: v1.y - v2.y, z: v1.z - v2.z };
-}
-
-function isEqual(v1, v2)
-{
-    return is_zero(v1-v2);
+    return is_zero(v1 - v2);
 }
 
 function radians(deg)
@@ -172,14 +156,46 @@ function angle_to_accel(angle_deg)
     return GRAVITY_MSS * Math.tan(radians(angle_deg));
 }
 
-function get_lean_angle_max_cd()
+// kinematic_limit calculates the maximum acceleration or velocity in a given direction.
+// based on horizontal and vertical limits.
+function kinematic_limit(direction, max_xy, max_z_pos, max_z_neg)
 {
-    const psc_lean_angle_max = parseFloat(document.getElementById("psc_lean_angle_max").value)
-    if (psc_lean_angle_max > 0) {
-        return psc_lean_angle_max * 100.0;
+    if (is_zero(direction.length_squared()) || is_zero(max_xy) || is_zero(max_z_pos) || is_zero(max_z_neg)) {
+        return 0.0;
     }
-    return parseFloat(document.getElementById("lean_angle_max").value);
+
+    max_xy = Math.abs(max_xy);
+    max_z_pos = Math.abs(max_z_pos);
+    max_z_neg = Math.abs(max_z_neg);
+
+    let unit_direction = direction.normalize();
+    const xy_length = new Vector(unit_direction.x, unit_direction.y, 0.0).length();
+
+    if (is_zero(xy_length)) {
+        // only moving in z
+        return is_positive(unit_direction.z) ? max_z_pos : max_z_neg;
+    }
+
+    if (is_zero(unit_direction.z)) {
+        // only moving in xy
+        return max_xy;
+    }
+
+    const slope = unit_direction.z/xy_length;
+    if (is_positive(slope)) {
+        if (Math.abs(slope) < max_z_pos/max_xy) {
+            return max_xy/xy_length;
+        }
+        return Math.abs(max_z_pos/unit_direction.z);
+    }
+
+    // Got this far then we are looking at a descending slope
+    if (Math.abs(slope) < max_z_neg/max_xy) {
+        return max_xy/xy_length;
+    }
+    return Math.abs(max_z_neg/unit_direction.z);
 }
+
 
 const SegmentType = Object.freeze({
     CONSTANT_JERK: 0,
@@ -210,7 +226,11 @@ class SCurve {
         this.track = new Vector();
         this.delta_unit = new Vector();
 
-        // this.init();
+        this.SEG_INIT = 0;
+        this.SEG_ACCEL_END = 7;
+        this.SEG_SPEED_CHANGE_END = 14;
+        this.SEG_CONST = 15;
+        this.SEG_DECEL_END = 22;
     }
 
     // Initialization function
@@ -219,7 +239,7 @@ class SCurve {
         this.jerk_max = 0.0;
         this.accel_max = 0.0;
         this.vel_max = 0.0;
-        this.time = 0.0;
+        this.time = 0.0;  // time that defines position on the path
 
         this.num_segs = 0;
         this.num_segs = this.add_segment(this.num_segs, 0.0, SegmentType.CONSTANT_JERK, 0.0, 0.0, 0.0, 0.0)
@@ -235,53 +255,54 @@ class SCurve {
     }
 
     // Calculate track motion profile between two 3D points
-    calculateTrack(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z, snap_maximum, jerk_maximum) {
+    calculate_track(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z, snap_maximum, jerk_maximum) {
         this.init();
 
         // Compute vector between origin and destination
-        let track_temp = subtractVectors(destination, origin);
-        if (is_zero(track_temp) || is_zero(vectorLengthSquared(track_temp))) {
+        let track_temp = destination.subtract(origin);
+        if (track_temp.is_zero() || is_zero(track_temp.length_squared())) {
             return;
         }
 
         this.snap_max = snap_maximum;
         this.jerk_max = jerk_maximum;
 
-        this.setKinematicLimits(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z);
+        this.set_kinematic_limits(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z);
 
         if (!is_positive(this.snap_max) || !is_positive(this.jerk_max) || 
             !is_positive(this.accel_max) || !is_positive(this.vel_max)) {
-            console.error("SCurve: Invalid kinematic parameters");
-            return;
+            throw new Error("SCurve: Invalid kinematic parameters");
         }
 
         this.track = track_temp;
-        const track_length = vectorLength(this.track);
+        const track_length = this.track.length();
 
         if (is_zero(track_length)) {
-            this.delta_unit = { x: 0, y: 0, z: 0 };
+            this.delta_unit.zero();
         } else {
-            this.delta_unit = normalizeVector(this.track);
-            this.addSegments(track_length);
+            // with non-zero track length we can build the full s-curve?
+            this.delta_unit = this.track.normalize();
+            this.add_segments(track_length);
         }
 
-        if (!this.isValid()) {
-            console.error("SCurve: Invalid path calculation");
-            this.init();
+        // Check if all of the segments of the s-curve are valid
+        if (!this.is_valid()) {
+            throw new Error("SCurve::calculate_track invalid path")
         }
     }
 
     // Set kinematic limits
-    setKinematicLimits(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z) {
+    set_kinematic_limits(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z) {
+        // ensure arguments are positive
         speed_xy = Math.abs(speed_xy);
         speed_up = Math.abs(speed_up);
         speed_down = Math.abs(speed_down);
         accel_xy = Math.abs(accel_xy);
         accel_z = Math.abs(accel_z);
 
-        let direction = subtractVectors(destination, origin);
-        this.vel_max = this.kinematicLimit(direction, speed_xy, speed_up, speed_down);
-        this.accel_max = this.kinematicLimit(direction, accel_xy, accel_z, accel_z);
+        let direction = destination.subtract(origin);
+        this.vel_max = kinematic_limit(direction, speed_xy, speed_up, speed_down);
+        this.accel_max = kinematic_limit(direction, accel_xy, accel_z, accel_z);
     }
 
     // add single S-Curve segment
@@ -298,42 +319,393 @@ class SCurve {
         return index + 1;
     }
 
-    // Add trajectory segments
-    addSegments(track_length) {
-        if (this.is_zero(track_length)) return;
 
-        let Jm, tj, t2, t4, t6;
-        this.calculatePath(this.snap_max, this.jerk_max, 0.0, this.accel_max, this.vel_max, track_length * 0.5, Jm, tj, t2, t4, t6);
+    // generate the segments for a path of length L
+    // the path consists of 23 segments
+    // 1 initial segment
+    // 7 segments forming the acceleration S-Curve
+    // 7 segments forming the velocity change S-Curve
+    // 1 constant velocity S-Curve
+    // 7 segments forming the deceleration S-Curve
+    add_segments(L)
+    {
+        if (is_zero(L)) {
+            return;
+        }
 
-        this.segment.push({ type: "INCR_JERK", jerk: Jm, duration: tj });
-        this.segment.push({ type: "CONST_JERK", jerk: 0.0, duration: t4 });
-        this.segment.push({ type: "DECR_JERK", jerk: -Jm, duration: t6 });
+        let [Jm, tj, t2, t4, t6] = this.calculate_path(this.snap_max, this.jerk_max, 0.0, this.accel_max, this.vel_max, L * 0.5);
 
-        // Add a constant speed phase
-        this.segment.push({ type: "CONST_VELOCITY", jerk: 0.0, duration: track_length / this.vel_max });
+        // Acceleration s-curve phase
+        this.num_segs = this.add_segments_jerk(this.num_segs, tj, Jm, t2);    // +3 segs (4) - increasing acceleration phase (positive jerk)
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, t4, 0.0);  // +1 seg (5) - constant acceleration (zero jerk)
+        this.num_segs = this.add_segments_jerk(this.num_segs, tj, -Jm, t6);   // +3 segs (8) - decreasing acceleration phase (negative jerk)
 
-        // Deceleration phase
-        this.segment.push({ type: "DECR_JERK", jerk: -Jm, duration: t6 });
-        this.segment.push({ type: "CONST_JERK", jerk: 0.0, duration: t4 });
-        this.segment.push({ type: "INCR_JERK", jerk: Jm, duration: t2 });
+        // remove numerical errors
+        // We expect that we will have reached the 0 acceleration, constant velocity phase by this point
+        this.segment[this.SEG_ACCEL_END].end_accel = 0.0;
+
+        // add empty speed adjust segments
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg - velocity ??
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg - velocity ??
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg - velocity ??
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg - velocity ??
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg - velocity ??
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg - velocity ??
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, 0.0, 0.0); // +1 seg (15) - velocity ??
+
+        // Calc time at the end of the constant velocity phase
+        const t15 = Math.max(0.0, (L - 2.0 * this.segment[this.SEG_SPEED_CHANGE_END].end_pos) / this.segment[this.SEG_SPEED_CHANGE_END].end_vel);
+
+        // Constant velocity phase
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, t15, 0.0); // +1 seg (16) - constant velocity
+
+        // Decceleration s-curve phase
+        this.num_segs = this.add_segments_jerk(this.num_segs, tj, -Jm, t6);  // +3 segs (19) - decreasing acceleration phase (negative jerk)
+        this.num_segs = this.add_segment_const_jerk(this.num_segs, t4, 0.0); // +1 seg (20) - constant acceleration (zero jerk)
+        this.num_segs = this.add_segments_jerk(this.num_segs, tj, Jm, t2);   // +3 segs (23) - increasing acceleration phase (positive jerk)
+
+        // remove numerical errors
+        this.segment[this.SEG_DECEL_END].end_accel = 0.0;
+        this.segment[this.SEG_DECEL_END].end_vel = 0.0;
     }
 
-
-
-    kinematicLimit(direction, speed_xy, speed_up, speed_down) {
-        let xy_speed = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
-        let vertical_speed = Math.abs(direction.z) > 0 ? (direction.z > 0 ? speed_up : speed_down) : 0;
-        return Math.sqrt(xy_speed * xy_speed + vertical_speed * vertical_speed);
+    // generate three consecutive segments forming a jerk profile
+    // the index variable is the position within the path array that this jerk profile should be added
+    // the index is incremented to reference the next segment in the array after the jerk profile
+    add_segments_jerk(index, tj, Jm, Tcj)
+    {
+        index = this.add_segment_incr_jerk(index, tj, Jm);
+        index = this.add_segment_const_jerk(index, Tcj, Jm);
+        index = this.add_segment_decr_jerk(index, tj, Jm);
+        return index
     }
 
-    isValid() {
-        return this.segment.length > 0;
+    // generate constant jerk time segment
+    // calculate the information needed to populate the constant jerk segment from the segment duration tj and jerk J0
+    // the index variable is the position of this segment in the path array and is incremented to reference the next segment in the array
+    add_segment_const_jerk(index, tj, J0)
+    {
+        // if no time increase copy previous segment, i.e. there is no constant jerk segment we are going straight
+        // into an s-curve jerk segment so we can just copy the exit conditions of the last segment which means we will essentially skip over it at run time
+        if (!is_positive(tj)) {
+            index = this.add_segment(index,
+                                    this.segment[index - 1].end_time,
+                                    SegmentType.CONSTANT_JERK,
+                                    J0,
+                                    this.segment[index - 1].end_accel,
+                                    this.segment[index - 1].end_vel,
+                                    this.segment[index - 1].end_pos);
+            return index;
+        }
+
+        // Calculate the segment exit conditions
+        const J = J0;
+        const T = this.segment[index - 1].end_time + tj;
+        const A = this.segment[index - 1].end_accel + J0 * tj;
+        const V = this.segment[index - 1].end_vel + this.segment[index - 1].end_accel * tj + 0.5 * J0 * tj**2;
+        const P = this.segment[index - 1].end_pos + this.segment[index - 1].end_vel * tj + 0.5 * this.segment[index - 1].end_accel * tj**2 + (1.0 / 6.0) * J0 * Math.pow(tj, 3.0);
+        index = this.add_segment(index, T, SegmentType.CONSTANT_JERK, J, A, V, P);
+        return index;
     }
 
-    debug() {
-        console.log("Segments:", this.segment);
-        console.log("Kinematics: ", { snap_max: this.snap_max, jerk_max: this.jerk_max, accel_max: this.accel_max, vel_max: this.vel_max });
+    // generate increasing jerk magnitude time segment based on a raised cosine profile
+    // calculate the information needed to populate the increasing jerk magnitude segment from the segment duration tj and jerk magnitude Jm
+    // the index variable is the position of this segment in the path array and is incremented to reference the next segment in the array
+    add_segment_incr_jerk(index, tj, Jm)
+    {
+        // if no time increase copy previous segment
+        if (!is_positive(tj)) {
+            index = this.add_segment(index,
+                        this.segment[index - 1].end_time,
+                        SegmentType.CONSTANT_JERK,
+                        0.0,
+                        this.segment[index - 1].end_accel,
+                        this.segment[index - 1].end_vel,
+                        this.segment[index - 1].end_pos);
+            return index;
+        }
+        const Beta = M_PI / tj;
+        const Alpha = Jm * 0.5;
+        const AT = Alpha * tj;
+        const VT = Alpha * (tj * 0.5 - 2.0 / Beta**2);
+        const PT = Alpha * ((-1.0 / Beta**2) * tj + (1.0 / 6.0) * Math.pow(tj, 3.0));
+
+        const J = Jm;
+        const T = this.segment[index - 1].end_time + tj;
+        const A = this.segment[index - 1].end_accel + AT;
+        const V = this.segment[index - 1].end_vel + this.segment[index - 1].end_accel * tj + VT;
+        const P = this.segment[index - 1].end_pos + this.segment[index - 1].end_vel * tj + 0.5 * this.segment[index - 1].end_accel * tj**2 + PT;
+        index = this.add_segment(index, T, SegmentType.POSITIVE_JERK, J, A, V, P);
+        return index;
     }
+
+    // generate decreasing jerk magnitude time segment based on a raised cosine profile
+    // calculate the information needed to populate the decreasing jerk magnitude segment from the segment duration tj and jerk magnitude Jm
+    // the index variable is the position of this segment in the path and is incremented to reference the next segment in the array
+    add_segment_decr_jerk(index, tj, Jm)
+    {
+        // if no time increase copy previous segment
+        if (!is_positive(tj)) {
+            index = this.add_segment(index,
+                        this.segment[index - 1].end_time,
+                        SegmentType.CONSTANT_JERK,
+                        0.0,
+                        this.segment[index - 1].end_accel,
+                        this.segment[index - 1].end_vel,
+                        this.segment[index - 1].end_pos);
+            return index;
+        }
+
+        const Beta = M_PI / tj;
+        const Alpha = Jm * 0.5;
+        const AT = Alpha * tj;
+        const VT = Alpha * (tj**2 * 0.5 - 2.0 / Beta**2);
+        const PT = Alpha * ((-1.0 / Beta**2) * tj + (1.0 / 6.0) * Math.pow(tj, 3.0));
+        const A2T = Jm * tj;
+        const V2T = Jm * tj**2;
+        const P2T = Alpha * ((-1.0 / Beta**2) * 2.0 * tj + (4.0 / 3.0) * Math.pow(tj, 3.0));
+
+        const J = Jm;
+        const T = this.segment[index - 1].end_time + tj;
+        const A = (this.segment[index - 1].end_accel - AT) + A2T;
+        const V = (this.segment[index - 1].end_vel - VT) + (this.segment[index - 1].end_accel - AT) * tj + V2T;
+        const P = (this.segment[index - 1].end_pos - PT) + (this.segment[index - 1].end_vel - VT) * tj + 0.5 * (this.segment[index - 1].end_accel - AT) * tj**2 + P2T;
+        index = this.add_segment(index, T, SegmentType.NEGATIVE_JERK, J, A, V, P);
+        return index;
+    }
+
+    // calculate the segment times for the trigonometric S-Curve path defined by:
+    // Sm - duration of the raised cosine jerk profile
+    // Jm - maximum value of the raised cosine jerk profile
+    // V0 - initial velocity magnitude
+    // Am - maximum constant acceleration
+    // Vm - maximum constant velocity
+    // L - Length of the path
+    // tj_out, t2_out, t4_out, t6_out are the segment durations needed to achieve the kinematic path specified by the input variables
+
+    // TODO: NEED to understand this function better.  Will circle back after I have understood how the segments are constructed.
+    calculate_path(Sm, Jm, V0, Am, Vm, L)
+    {
+        // init outputs
+        let Jm_out = 0.0;
+        let tj_out = 0.0;
+        let t2_out = 0.0;
+        let t4_out = 0.0;
+        let t6_out = 0.0;
+
+        // check for invalid arguments
+        if (!is_positive(Sm) || !is_positive(Jm) || !is_positive(Am) || !is_positive(Vm) || !is_positive(L)) {
+            throw new Error("SCurve::calculate_path invalid inputs\n");
+        }
+
+        if (V0 >= Vm) {
+            // no velocity change so all segments as zero length ??????
+            return [Jm_out, tj_out, t2_out, t4_out, t6_out];
+        }
+
+        // We have been given the maximum snap value (sm).  Due to the known kinematic profile (raised cosine curve)
+        // Sm is known to occure at time (t) = tj / 2.  Putting this time into the snap equation to obtain an expression for the
+        // the max snap, and rearranging to find the time periosd tj:
+        let tj = Jm * M_PI / (2 * Sm);
+
+        const accel_1 = (Vm - V0) / (2.0 * tj);
+        const accel_2 = (L + 4.0 * V0 * tj) / (4.0 * tj**2);
+        let At = Math.min( Math.min(Am, accel_1), accel_2);
+
+        if (Math.abs(At) < Jm * tj) {
+            if (is_zero(V0)) {
+                // we do not have a solution for non-zero initial velocity
+                let min_tj = Math.min( tj, Math.pow((L * M_PI) / (8.0 * Sm), 1.0/4.0) );
+                min_tj = Math.min( min_tj , Math.pow((Vm * M_PI) / (4.0 * Sm), 1.0/3.0) );
+                min_tj = Math.min( min_tj, Math.sqrt((Am * M_PI) / (2.0 * Sm)) );
+                tj = min_tj;
+                Jm = 2.0 * Sm * tj / M_PI;
+                Am = Jm * tj;
+
+            } else {
+                // When doing speed change we use fixed tj and adjust Jm for small changes
+                Am = At;
+                Jm = Am / tj;
+            }
+
+            const exceed_amax = (Vm <= V0 + 2.0 * Am * tj); // ?????
+            const exceed_vmax = (L <= 4.0 * V0 * tj + 4.0 * Am * tj**2); // ??????
+            if (exceed_vmax || exceed_vmax) {
+                // solution = 0 - t6 t4 t2 = 0 0 0
+                t2_out = 0.0;
+                t4_out = 0.0;
+                t6_out = 0.0;
+
+            } else {
+                // solution = 2 - t6 t4 t2 = 0 1 0
+                t2_out = 0.0;
+                t4_out = Math.min(-(V0 - Vm + Am * tj + (Am * Am) / Jm) / Am, Math.max(((Am * Am) * (-3.0 / 2.0) + Math.sqrt((Am * Am * Am * Am) * (1.0 / 4.0) + (Jm * Jm) * (V0 * V0) + (Am * Am) * (Jm * Jm) * (tj * tj) * (1.0 / 4.0) + Am * (Jm * Jm) * L * 2.0 - (Am * Am) * Jm * V0 + (Am * Am * Am) * Jm * tj * (1.0 / 2.0) - Am * (Jm * Jm) * V0 * tj) - Jm * V0 - Am * Jm * tj * (3.0 / 2.0)) / (Am * Jm), ((Am * Am) * (-3.0 / 2.0) - Math.sqrt((Am * Am * Am * Am) * (1.0 / 4.0) + (Jm * Jm) * (V0 * V0) + (Am * Am) * (Jm * Jm) * (tj * tj) * (1.0 / 4.0) + Am * (Jm * Jm) * L * 2.0 - (Am * Am) * Jm * V0 + (Am * Am * Am) * Jm * tj * (1.0 / 2.0) - Am * (Jm * Jm) * V0 * tj) - Jm * V0 - Am * Jm * tj * (3.0 / 2.0)) / (Am * Jm)));
+                t4_out = Math.max(t4_out, 0.0);
+                t6_out = 0.0;
+            }
+
+        } else {
+            if ((Vm < V0 + Am * tj + (Am * Am) / Jm) || (L < 1.0 / (Jm * Jm) * (Am * Am * Am + Am * Jm * (V0 * 2.0 + Am * tj * 2.0)) + V0 * tj * 2.0 + Am * (tj * tj))) {
+                // solution = 5 - t6 t4 t2 = 1 0 1
+                Am = Math.min(Math.min(Am, Math.max(Jm * (tj + Math.sqrt((V0 * -4.0 + Vm * 4.0 + Jm * (tj * tj)) / Jm)) * (-1.0 / 2.0), Jm * (tj - Math.sqrt((V0 * -4.0 + Vm * 4.0 + Jm * (tj * tj)) / Jm)) * (-1.0 / 2.0))), Jm * tj * (-2.0 / 3.0) + ((Jm * Jm) * (tj * tj) * (1.0 / 9.0) - Jm * V0 * (2.0 / 3.0)) * 1.0 / Math.pow(Math.sqrt(Math.pow(- (Jm * Jm) * L * (1.0 / 2.0) + (Jm * Jm * Jm) * (tj * tj * tj) * (8.0 / 2.7E1) - Jm * tj * ((Jm * Jm) * (tj * tj) + Jm * V0 * 2.0) * (1.0 / 3.0) + (Jm * Jm) * V0 * tj, 2.0) - Math.pow((Jm * Jm) * (tj * tj) * (1.0 / 9.0) - Jm * V0 * (2.0 / 3.0), 3.0)) + (Jm * Jm) * L * (1.0 / 2.0) - (Jm * Jm * Jm) * (tj * tj * tj) * (8.0 / 2.7E1) + Jm * tj * ((Jm * Jm) * (tj * tj) + Jm * V0 * 2.0) * (1.0 / 3.0) - (Jm * Jm) * V0 * tj, 1.0 / 3.0) + Math.pow(Math.sqrt(Math.pow(- (Jm * Jm) * L * (1.0 / 2.0) + (Jm * Jm * Jm) * (tj * tj * tj) * (8.0 / 2.7E1) - Jm * tj * ((Jm * Jm) * (tj * tj) + Jm * V0 * 2.0) * (1.0 / 3.0) + (Jm * Jm) * V0 * tj, 2.0) - Math.pow((Jm * Jm) * (tj * tj) * (1.0 / 9.0) - Jm * V0 * (2.0 / 3.0), 3.0)) + (Jm * Jm) * L * (1.0 / 2.0) - (Jm * Jm * Jm) * (tj * tj * tj) * (8.0 / 2.7E1) + Jm * tj * ((Jm * Jm) * (tj * tj) + Jm * V0 * 2.0) * (1.0 / 3.0) - (Jm * Jm) * V0 * tj, 1.0 / 3.0));
+                t2_out = Am / Jm - tj;
+                t4_out = 0.0;
+                t6_out = t2_out;
+            } else {
+                // solution = 7 - t6 t4 t2 = 1 1 1
+                t2_out = Am / Jm - tj;
+                t4_out = Math.min(-(V0 - Vm + Am * tj + (Am * Am) / Jm) / Am, Math.max(((Am * Am) * (-3.0 / 2.0) + Math.sqrt((Am * Am * Am * Am) * (1.0 / 4.0) + (Jm * Jm) * (V0 * V0) + (Am * Am) * (Jm * Jm) * (tj * tj) * (1.0 / 4.0) + Am * (Jm * Jm) * L * 2.0 - (Am * Am) * Jm * V0 + (Am * Am * Am) * Jm * tj * (1.0 / 2.0) - Am * (Jm * Jm) * V0 * tj) - Jm * V0 - Am * Jm * tj * (3.0 / 2.0)) / (Am * Jm), ((Am * Am) * (-3.0 / 2.0) - Math.sqrt((Am * Am * Am * Am) * (1.0 / 4.0) + (Jm * Jm) * (V0 * V0) + (Am * Am) * (Jm * Jm) * (tj * tj) * (1.0 / 4.0) + Am * (Jm * Jm) * L * 2.0 - (Am * Am) * Jm * V0 + (Am * Am * Am) * Jm * tj * (1.0 / 2.0) - Am * (Jm * Jm) * V0 * tj) - Jm * V0 - Am * Jm * tj * (3.0 / 2.0)) / (Am * Jm)));
+                t4_out = Math.max(t4_out, 0.0);
+                t6_out = t2_out;
+            }
+        }
+        tj_out = tj;
+        Jm_out = Jm;
+
+        // check outputs and reset back to zero if necessary
+        if (!Number.isFinite(Jm_out) || is_negative(Jm_out) ||
+            !Number.isFinite(tj_out) || is_negative(tj_out) ||
+            !Number.isFinite(t2_out) || is_negative(t2_out) ||
+            !Number.isFinite(t4_out) || is_negative(t4_out) ||
+            !Number.isFinite(t6_out) || is_negative(t6_out)) {
+
+            throw new Error("SCurve::calculate_path invalid outputs\n");
+        }
+
+        return [Jm_out, tj_out, t2_out, t4_out, t6_out];
+    }
+
+    // set the maximum vehicle speed at the origin
+    // returns the expected speed at the origin which will always be equal or lower than speed
+    set_origin_speed_max(speed)
+    {
+        // if path is zero length then start speed must be zero
+        if (this.num_segs != this.segments_max) {
+            return 0.0;
+        }
+
+        // avoid re-calculating if unnecessary
+        if (is_equal(this.segment[this.SEG_INIT].end_vel, speed)) {
+            return speed;
+        }
+
+        const Vm = this.segment[this.SEG_ACCEL_END].end_vel;
+        const track_length = this.track.length();
+        speed = MIN(speed, Vm);
+
+        let [Jm, tj, t2, t4, t6] = this.calculate_path(this.snap_max, this.jerk_max, speed, this.accel_max, Vm, track_length * 0.5);
+
+        // Overwrite the first 8 segements to go from origin speed to constant velocity phase of the s-curve segments
+        let seg = this.SEG_INIT;
+        seg = this.add_segment(seg, 0.0, SegmentType.CONSTANT_JERK, 0.0, 0.0, speed, 0.0);
+        seg = this.add_segments_jerk(seg, tj, Jm, t2);
+        seg = this.add_segment_const_jerk(seg, t4, 0.0);
+        seg = this.add_segments_jerk(seg, tj, -Jm, t6);
+
+        // remove numerical errors
+        this.segment[this.SEG_ACCEL_END].end_accel = 0.0;
+
+        // offset acceleration segment if we can't fit it all into half the original length
+        const dPstart = Math.min(0.0, track_length * 0.5 - this.segment[this.SEG_ACCEL_END].end_pos);  // MANNA TODO: I think this maybe backwards
+        const dt =  dPstart / this.segment[this.SEG_ACCEL_END].end_vel;
+        for (let i = this.SEG_INIT; i <= this.SEG_ACCEL_END; i++) {
+            segment[i].end_time += dt;
+            segment[i].end_pos += dPstart;
+        }
+
+        // add empty speed change segments and constant speed segment  -- TODO: Why do this manually? we have a add_segment function
+        for (let i = this.SEG_ACCEL_END+1; i <= this.SEG_SPEED_CHANGE_END; i++) {
+            this.segment[i].seg_type = SegmentType.CONSTANT_JERK;
+            this.segment[i].jerk_ref = 0.0;
+            this.segment[i].end_time = segment[SEG_ACCEL_END].end_time;
+            this.segment[i].end_accel = 0.0;
+            this.segment[i].end_vel = segment[SEG_ACCEL_END].end_vel;
+            this.segment[i].end_pos = segment[SEG_ACCEL_END].end_pos;
+        }
+
+        seg = this.SEG_CONST; // TODO count up the segments in the for loop above
+        seg = this.add_segment_const_jerk(seg, 0.0, 0.0);
+
+        // now recalc the the deceleration path required to end the s-curve at zero vel and accel????
+        // TODO: this also doesn't seem right as we are not at zero velocity (V0 = 0.0 below).  At least I don't think we are.....
+        [Jm, tj, t2, t4, t6] = this.calculate_path(this.snap_max, this.jerk_max, 0.0, this.accel_max, this.segment[this.SEG_CONST].end_vel, track_length * 0.5);
+
+        seg = this.add_segments_jerk(seg, tj, -Jm, t6);
+        seg = this.add_segment_const_jerk(seg, t4, 0.0);
+        seg = this.add_segments_jerk(seg, tj, Jm, t2);
+
+        // remove numerical errors
+        this.segment[this.SEG_DECEL_END].end_accel = 0.0;
+        this.segment[this.SEG_DECEL_END].end_vel = Math.max(0.0, this.segment[this.SEG_DECEL_END].end_vel);
+
+        // add to constant velocity segment to end at the correct position
+        const dP = MAX(0.0, track_length - this.segment[this.SEG_DECEL_END].end_pos);
+        const t15 =  dP / this.segment[this.SEG_CONST].end_vel;
+        for (let i = this.SEG_CONST; i <= this.SEG_DECEL_END; i++) {
+            this.segment[i].end_time += t15;
+            this.segment[i].end_pos += dP;
+        }
+
+        // catch calculation errors
+        if (!valid()) {
+            throw new Error("SCurve::set_origin_speed_max invalid path\n");
+        }
+
+        return speed;
+    }
+
+    is_valid()
+    {
+        // check number of segments
+        if (this.num_segs != this.segments_max) {
+            return false;
+        }
+
+        for (let i = 0; i < this.num_segs; i++) {
+            // jerk_ref should be finite (i.e. not NaN or infinity)
+            // time, accel, vel and pos should finite and not negative
+            if (!Number.isFinite(this.segment[i].jerk_ref) ||
+                !Number.isFinite(this.segment[i].end_time) ||
+                !Number.isFinite(this.segment[i].end_accel) ||
+                !Number.isFinite(this.segment[i].end_vel) || is_negative(this.segment[i].end_vel) ||
+                !Number.isFinite(this.segment[i].end_pos)) {
+                return false;
+            }
+
+            // time and pos should be increasing
+            if (i >= 1) {
+                if (is_negative(this.segment[i].end_time - this.segment[i-1].end_time) ||
+                    is_negative(this.segment[i].end_pos - this.segment[i-1].end_pos)) {
+                    return false;
+                }
+            }
+        }
+
+        // last segment should have zero acceleration
+        if (!is_zero(this.segment[this.num_segs-1].end_accel)) {
+            return false;
+        }
+
+        // if we get this far then the curve must be valid
+        return true;
+    }
+
+    finished()
+    {
+        return ((this.time >= this.time_end()) || (this.position_sq >= this.track.length_squared()));
+    }
+
+    // time at the end of the sequence
+    time_end()
+    {
+        // GUESS: Number of segments is incomplete so we just send zero time
+        if (this.num_segs != this.segments_max) {
+            return 0.0;
+        }
+        const SEG_DECEL_END = this.segments_max-1;
+        return this.segment[SEG_DECEL_END].end_time;
+    }
+
 }
 
 // Example Usage
@@ -348,8 +720,12 @@ class WPNav {
 
         this.accel_corner = parseFloat(document.getElementById("wpnav_accel_c_max").value);
         this.wp_accel_cmss = parseFloat(document.getElementById("wpnav_accel_xy_max").value);
+        this.wp_accel_z_cmss = parseFloat(document.getElementById("wpnav_accel_z_max").value);
 
         this.wp_speed_cms = parseFloat(document.getElementById("wpnav_speed_xy_max").value);
+        this.wp_speed_down_cms = parseFloat(document.getElementById("wpnav_speed_z_dn").value);
+        this.wp_speed_up_cms = parseFloat(document.getElementById("wpnav_speed_z_up").value);
+        this.wp_desired_speed_xy_cms = 0;
 
         this.wp_radius_cm = parseFloat(document.getElementById("wpnav_radius").value);
 
@@ -373,7 +749,7 @@ class WPNav {
     }
 
 
-    wp_and_spline_init(stopping_point) {
+    wp_and_spline_init(speed_cms = 0.0, stopping_point = new Vector()) {
 
         // sanity check parameters
         // check _wp_accel_cmss is reasonable
@@ -389,6 +765,13 @@ class WPNav {
         // check _wp_speed
         const WPNAV_WP_SPEED_MIN = 20.0;
         this.wp_speed_cms = Math.max(this.wp_speed_cms, WPNAV_WP_SPEED_MIN);
+
+        // initialize the desired wp speed if not already done
+        this.wp_desired_speed_xy_cms = is_positive(speed_cms) ? speed_cms : this.wp_speed_cms;
+        this.wp_desired_speed_xy_cms = Math.max(this.wp_desired_speed_xy_cms, WPNAV_WP_SPEED_MIN);
+
+        this.pos_control.set_max_speed_accel_xy(this.wp_desired_speed_xy_cms, this.wp_accel_cmss);
+        this.pos_control.set_max_speed_accel_z(-this.get_default_speed_down(), this.wp_speed_up_cms, this.wp_accel_z_cmss);
 
         // calculate scurve jerk and jerk time
         if (!is_positive(this.wp_jerk)) {
@@ -444,19 +827,49 @@ class WPNav {
      * @param {{x: number, y: number, z: number}} destination - Destination vector {x, y, z}
      */
     set_wp_destination (destination) {
-        this.leg_dest = destination;
 
-        // set WP destination():
-        let scurve_this_leg = new SCurve();
+        this.scurve_prev_leg.init();
+        let origin_speed = 0.0;
 
-        scurve_this_leg.calculateTrack(leg_origin, point2, this.wp_speed_cms, speed_z_up, speed_z_down, accel_xy_max, accel_z_max, snap_max, jerk_max);
+        // use previous destination as origin
+        this.origin = this.destination;
 
-        if (!is_zero(origin_speed)) {
-            // rebuild start of scurve if we have a non-zero origin speed
-            scurve_this_leg.setOriginSpeedMax(origin_speed);
+        // In AP there is a buch of conversions and cases depending on alt frame and whether spline wp or not.
+        // That stuff drops out in this simplified version.
+
+        // update destination
+        this.destination = destination;
+
+        if (this.flags.fast_waypoint && !this.scurve_next_leg.finished()) {
+            // We have a fast WP so we can move onto the next leg without having finished the current scurve leg
+            this.scurve_this_leg = this.scurve_next_leg;
+        } else {
+            this.scurve_this_leg.calculate_track(this.origin, this.destination,
+                                                this.pos_control.get_max_speed_xy_cms(), this.pos_control.get_max_speed_up_cms(), this.pos_control.get_max_speed_down_cms(),
+                                                this.wp_accel_cmss, this.wp_accel_z_cmss,
+                                                this.scurve_snap * 100.0, this.scurve_jerk * 100.0);
+
+            if (!is_zero(origin_speed)) {
+                // rebuild start of scurve if we have a non-zero origin speed
+                this.scurve_this_leg.set_origin_speed_max(origin_speed);
+            }
         }
 
+    this.scurve_next_leg.init();
+    this.flags.fast_waypoint = false;   // default waypoint back to slow
+    this.flags.reached_destination = false;
+
+    return true;
+
     }
+
+    set_wp_destination_loc (destination) {
+        // In AP some conversion is done here to go from location to vector from EKF origin
+
+        return this.set_wp_destination(destination)
+    }
+
+    get_default_speed_down() { return Math.abs(this.wp_speed_down_cms); }
 
 
 }
@@ -466,6 +879,20 @@ class Position_Control {
     constructor()
     {
         this.attitude_control = new Attitude_Control();
+        this.pid_accel_z = new PSC_PID();
+
+        this.jerk_max_xy_cmsss = 0;
+        this.shaping_jerk_xy = parseFloat(document.getElementById("psc_max_jerk_xy").value);
+        this.jerk_max_z_cmsss = 0;
+        this.shaping_jerk_z = parseFloat(document.getElementById("psc_max_jerk_z").value);
+
+        this.accel_max_xy_cmss = 0;
+        this.accel_max_z_cmss = 0;
+
+        this.vel_max_xy_cms = 0;
+        this.vel_max_down_cms = 0;
+        this.vel_max_up_cms = 0;
+
         this.lean_angle_max = parseFloat(document.getElementById("psc_lean_angle_max").value);
     }
 
@@ -475,6 +902,68 @@ class Position_Control {
             return this.attitude_control.lean_angle_max_cd();
         }
         return lean_angle_max * 100.0;
+    }
+
+    get_max_speed_xy_cms() { return this.vel_max_xy_cms; }
+    get_max_speed_up_cms() { return this.vel_max_up_cms; }
+    get_max_speed_down_cms() { return this.vel_max_down_cms; }
+
+    /// set_max_speed_accel_xy - set the maximum horizontal speed in cm/s and acceleration in cm/s/s
+    ///     This function only needs to be called if using the kinematic shaping.
+    ///     This can be done at any time as changes in these parameters are handled smoothly
+    ///     by the kinematic shaping.
+    set_max_speed_accel_xy(speed_cms, accel_cmss)
+    {
+        this.vel_max_xy_cms = speed_cms;
+        this.accel_max_xy_cmss = accel_cmss;
+
+        // ensure the horizontal jerk is less than the vehicle is capable of
+        const jerk_max_cmsss = Math.min(this.attitude_control.get_ang_vel_roll_max_rads(), this.attitude_control.get_ang_vel_pitch_max_rads()) * GRAVITY_MSS * 100.0;
+        const snap_max_cmssss = Math.min(this.attitude_control.get_accel_roll_max_radss(), this.attitude_control.get_accel_pitch_max_radss()) * GRAVITY_MSS * 100.0;
+
+        // get specified jerk limit
+        this.jerk_max_xy_cmsss = this.shaping_jerk_xy * 100.0;
+
+        // limit maximum jerk based on maximum angular rate
+        if (is_positive(jerk_max_cmsss) && this.attitude_control.get_bf_feedforward()) {
+            this.jerk_max_xy_cmsss = Math.min(this.jerk_max_xy_cmsss, jerk_max_cmsss);
+        }
+
+        // limit maximum jerk to maximum possible average jerk based on angular acceleration
+        if (is_positive(snap_max_cmssss) && this.attitude_control.get_bf_feedforward()) {
+            this.jerk_max_xy_cmsss = Math.min(0.5 * Math.sqrt(this.accel_max_xy_cmss * snap_max_cmssss), this.jerk_max_xy_cmsss);
+        }
+    }
+
+    /// set_max_speed_accel_z - set the maximum vertical speed in cm/s and acceleration in cm/s/s
+    ///     speed_down can be positive or negative but will always be interpreted as a descent speed.
+    ///     This function only needs to be called if using the kinematic shaping.
+    ///     This can be done at any time as changes in these parameters are handled smoothly
+    ///     by the kinematic shaping.
+    set_max_speed_accel_z(speed_down, speed_up, accel_cmss)
+    {
+        // ensure speed_down is always negative
+        speed_down = -Math.abs(speed_down);
+
+        // sanity check and update
+        if (is_negative(speed_down)) {
+            this.vel_max_down_cms = speed_down;
+        }
+        if (is_positive(speed_up)) {
+            this.vel_max_up_cms = speed_up;
+        }
+        if (is_positive(accel_cmss)) {
+            this.accel_max_z_cmss = accel_cmss;
+        }
+
+        // ensure the vertical Jerk is not limited by the filters in the Z accel PID object
+        this.jerk_max_z_cmsss = this.shaping_jerk_z * 100.0;
+        if (is_positive(this.pid_accel_z.filt_T_hz())) {
+            this.jerk_max_z_cmsss = Math.min(this.jerk_max_z_cmsss, Math.min(GRAVITY_MSS * 100.0, this.accel_max_z_cmss) * (M_2PI * this.pid_accel_z.filt_T_hz()) / 5.0);
+        }
+        if (is_positive(this.pid_accel_z.filt_E_hz())) {
+            this.jerk_max_z_cmsss = Math.min(this.jerk_max_z_cmsss, Math.min(GRAVITY_MSS * 100.0, this.accel_max_z_cmss) * (M_2PI * this.pid_accel_z.filt_E_hz()) / 5.0);
+        }
     }
 
 }
@@ -489,6 +978,7 @@ class Attitude_Control {
         this.ang_vel_pitch_max = parseFloat(document.getElementById("atc_pitch_rate_max").value);
         this.angle_max = parseFloat(document.getElementById("lean_angle_max").value);
         this.input_tc = parseFloat(document.getElementById("atc_input_tc").value);
+        this.rate_bf_ff_enabled = parseFloat(document.getElementById("atc_rate_ff_enable").value) > 0;
     }
 
     lean_angle_max_cd() { return this.angle_max; }
@@ -503,6 +993,19 @@ class Attitude_Control {
 
     get_accel_pitch_max_radss() { return radians(this.accel_pitch_max * 0.01); }
 
+    get_bf_feedforward() { return this.rate_bf_ff_enabled; }
+
+}
+
+// An essentially static class that is used to keep the function/class calls looking the same between this JS and the AP C++
+class PSC_PID {
+    constructor() {
+        this.filt_targ_hz = parseFloat(document.getElementById("psc_target_filter_cutoff").value);
+        this.filt_err_hz = parseFloat(document.getElementById("psc_error_filter_cutoff").value);
+    }
+
+    filt_T_hz() { return this.filt_targ_hz; }
+    filt_E_hz() { return this.filt_err_hz; }
 }
 
 
@@ -527,6 +1030,27 @@ class Vector {
     is_zero() {
         return is_zero(this.x) && is_zero(this.y) && is_zero(this.z);
     }
+
+    length_squared() {
+        return this.x * this.x + this.y * this.y + this.z * this.z;
+    }
+
+    length() {
+        return Math.sqrt(this.length_squared());
+    }
+
+    subtract(v2) {
+        return new Vector(this.x - v2.x,
+                          this.y - v2.y,
+                          this.z - v2.z);
+    }
+
+    normalize() {
+        const v_length = this.length();
+        return new Vector(this.x / v_length,
+                          this.y / v_length,
+                          this.z / v_length);
+    }
 }
 
 
@@ -549,17 +1073,16 @@ function run_flare()
                             parseFloat(document.getElementById("last_wp_y").value),
                             parseFloat(document.getElementById("last_wp_z").value));
 
-    // const origin_speed = parseFloat(document.getElementById("initial_vel").value);
 
 
     // construct "waypoint nav", giving it a starting location.
     let wp_nav = new WPNav()
 
-
+    // wp_start()
     // This pretty much follows the mode auto logic in copter
-    wp_nav.wp_and_spline_init(point1);
+    wp_nav.wp_and_spline_init(0.0, point1);
 
-
+    wp_nav.set_wp_destination_loc(point2);
 
 
 

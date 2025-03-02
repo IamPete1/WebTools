@@ -254,6 +254,16 @@
         </p>
 
         <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="psc_target_filter_cutoff" value="0" min="0" step="1" max="50" style="width: 50px" onchange="run_flare()">
+          <label for="psc_target_filter_cutoff">PSC_ACCZ_FLTT (Hz)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="psc_error_filter_cutoff" value="0" min="0" step="1" max="50" style="width: 50px" onchange="run_flare()">
+          <label for="psc_error_filter_cutoff">PSC_ACCZ_FLTE (Hz)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
           <input type="number" id="lean_angle_max" value="3000" min="1000" step="100" max="8000" style="width: 50px" onchange="run_flare()">
           <label for="lean_angle_max">ANGLE_MAX (cdeg)</label>
         </p>
@@ -281,6 +291,11 @@
         <p style="margin-top:5px; margin-bottom:5px;">
           <input type="number" id="atc_input_tc" value="0.15" min="0.05" step="0.05" max="0.5" style="width: 50px" onchange="run_flare()">
           <label for="atc_input_tc">ATC_INPUT_TC (s)</label>
+        </p>
+
+        <p style="margin-top:5px; margin-bottom:5px;">
+          <input type="number" id="atc_rate_ff_enable" value="1" min="0" step="1" max="1" style="width: 50px" onchange="run_flare()">
+          <label for="atc_rate_ff_enable">ATC_RATE_FF_ENAB</label>
         </p>
 
       </fieldset>
