@@ -29,15 +29,16 @@ function initial_load()
     Plotly.purge(plot)
     Plotly.newPlot(plot, wp_pos_plot.data, wp_pos_plot.layout, { displaylogo: false })
 
-    // Acceleration
-    jerk_plot.data = [{ x:[], y:[], name: 'Dumb', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
-                      { x:[], y:[], name: 'Smart', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }]
+    // Jerk
+    jerk_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
+                      { x:[], y:[], name: '---', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }]
 
     jerk_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
         margin: { b: 50, l: 60, r: 50, t: 20 },
         xaxis: { title: {text: time_scale_label } },
-        yaxis: { title: {text: "Jerk (m/s³)" } }
+        yaxis: { title: {text: "Jerk (m/s³)" } },
+        showlegend: true
     }
 
     plot = document.getElementById("jerk_plot")
@@ -45,14 +46,15 @@ function initial_load()
     Plotly.newPlot(plot, jerk_plot.data, jerk_plot.layout, { displaylogo: false })
 
     // Acceleration
-    accel_plot.data = [{ x:[], y:[], name: 'Dumb', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" },
-                       { x:[], y:[], name: 'Smart', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" }]
+    accel_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" },
+                       { x:[], y:[], name: 'output', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" }]
 
     accel_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
         margin: { b: 50, l: 60, r: 50, t: 20 },
         xaxis: { title: {text: time_scale_label } },
-        yaxis: { title: {text: "Acceleration (m/s²)" } }
+        yaxis: { title: {text: "Acceleration (m/s²)" } },
+        showlegend: true
     }
 
     plot = document.getElementById("accel_plot");
@@ -60,14 +62,15 @@ function initial_load()
     Plotly.newPlot(plot, accel_plot.data, accel_plot.layout, { displaylogo: false });
 
     // velocity
-    vel_plot.data = [{ x:[], y:[], name: 'Dumb', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" },
-                     { x:[], y:[], name: 'Smart', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" }];
+    vel_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" },
+                     { x:[], y:[], name: 'output', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" }];
 
     vel_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
         margin: { b: 50, l: 60, r: 50, t: 20 },
         xaxis: { title: {text: time_scale_label } },
         yaxis: { title: {text: "Velocity (m/s)" } },
+        showlegend: true,
         shapes: [{
             type: 'line',
             line: { dash: "dot" },
@@ -83,14 +86,17 @@ function initial_load()
     Plotly.newPlot(plot, vel_plot.data, vel_plot.layout, { displaylogo: false })
 
     // position
-    pos_plot.data = [{ x:[], y:[], name: 'Dumb', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" },
-                     { x:[], y:[], name: 'Smart', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" }]
+    pos_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" },
+                     { x:[], y:[], name: 'output', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" }]
+                    //  { x:[], y:[], name: 'Y', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" },
+                    //  { x:[], y:[], name: 'Z', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" }]
 
     pos_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
         margin: { b: 50, l: 60, r: 50, t: 20 },
         xaxis: { title: {text: time_scale_label } },
         yaxis: { title: {text: "Position (m)" } },
+        showlegend: true,
         shapes: [{
             type: 'line',
             line: { dash: "dot" },
@@ -107,20 +113,20 @@ function initial_load()
 
 
     // Link all time axis
-    // link_plot_axis_range([
-    //     ["jerk_plot", "x", "", jerk_plot],
-    //     ["accel_plot", "x", "", accel_plot],
-    //     ["vel_plot", "x", "", vel_plot],
-    //     ["pos_plot", "x", "", pos_plot],
-    // ])
+    link_plot_axis_range([
+        ["jerk_plot", "x", "", jerk_plot],
+        ["accel_plot", "x", "", accel_plot],
+        ["vel_plot", "x", "", vel_plot],
+        ["pos_plot", "x", "", pos_plot],
+    ])
 
-    // Link plot reset
-    // link_plot_reset([
-    //     ["jerk_plot", jerk_plot],
-    //     ["accel_plot", accel_plot],
-    //     ["vel_plot", vel_plot],
-    //     ["pos_plot", pos_plot],
-    // ])
+    // // Link plot reset
+    link_plot_reset([
+        ["jerk_plot", jerk_plot],
+        ["accel_plot", accel_plot],
+        ["vel_plot", vel_plot],
+        ["pos_plot", pos_plot],
+    ])
 }
 
 // Utility functions
@@ -215,6 +221,17 @@ class Segments {
     }
 }
 
+class KinematicLogging {
+    constructor()
+    {
+        this.time = [];     // (s) Array of time
+        this.pos = [];      // (m) Array of type Vector
+        this.vel = [];      // (m/s) Array of type Vector
+        this.accel = [];    // (m/s/s) Array of type Vector
+        this.jerk = [];     // (m/s/s/s) Array of type Vector
+    }
+}
+
 class SCurve {
     constructor() {
 
@@ -230,7 +247,11 @@ class SCurve {
         this.SEG_ACCEL_END = 7;
         this.SEG_SPEED_CHANGE_END = 14;
         this.SEG_CONST = 15;
+        this.SEG_TURN_OUT = 15;
+        this.SEG_TURN_IN = 4;
         this.SEG_DECEL_END = 22;
+
+        this.logger = new KinematicLogging();
     }
 
     // Initialization function
@@ -251,7 +272,16 @@ class SCurve {
 
     // increment the internal time
     advance_time(dt) {
-        time = MIN(time+dt, time_end());
+        this.time = Math.min(this.time+dt, this.time_end());
+    }
+
+    // time at the end of the sequence
+    time_end()
+    {
+        if (this.num_segs != this.segments_max) {
+            return 0.0;
+        }
+        return this.segment[this.SEG_DECEL_END].end_time;
     }
 
     // Calculate track motion profile between two 3D points
@@ -654,6 +684,259 @@ class SCurve {
         return speed;
     }
 
+    // move target location along path from origin to destination
+    // prev_leg and next_leg are the paths before and after this path
+    // wp_radius is max distance from the waypoint at the apex of the turn
+    // fast_waypoint should be true if vehicle will not stop at end of this leg
+    // dt is the time increment the vehicle will move along the path
+    // target_pos should be set to this segment's origin and it will be updated to the current position target
+    // target_vel and target_accel are updated with new targets
+    // returns true if vehicle has passed the apex of the corner
+    advance_target_along_track(prev_leg, next_leg, wp_radius, accel_corner, fast_waypoint, dt, target_pos, target_vel, target_accel)
+    {
+        [target_pos, target_vel, target_accel] = prev_leg.move_to_pos_vel_accel(dt, target_pos, target_vel, target_accel);
+        [target_pos, target_vel, target_accel] = this.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
+        let s_finished = this.finished();
+
+        // // check for change of leg on fast waypoint
+        // const time_to_destination = this.get_time_remaining();
+        // if (fast_waypoint 
+        //     && is_zero(next_leg.get_time_elapsed()) 
+        //     && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in()) 
+        //     && (this.position_sq >= 0.25 * this.track.length_squared())) {
+
+        //     let turn_pos = new Vector();
+        //     turn_pos = turn_pos.subtract(this.track);
+
+        //     let turn_vel = new Vector();
+        //     let turn_accel = new Vector();
+        //     [turn_pos, turn_vel, turn_accel] = this.move_from_time_pos_vel_accel(get_time_elapsed() + time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
+
+        //     next_leg.move_from_time_pos_vel_accel(time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
+        //     const speed_min = Math.min(this.get_speed_along_track(), next_leg.get_speed_along_track());
+        //     if ((this.get_time_remaining() < next_leg.time_end() * 0.5) && (turn_pos.length() < wp_radius) &&
+        //         (new Vector(turn_vel.x, turn_vel.y, 0.0).length() < speed_min) &&
+        //         (new Vector(turn_accel.x, turn_accel.y, 0.0).length() < accel_corner))
+        //         {
+        //         next_leg.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
+        //     }
+
+        // } else if (!is_zero(next_leg.get_time_elapsed())) {
+        //     [target_pos, target_vel, target_accel] = next_leg.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
+        //     if (next_leg.get_time_elapsed() >= this.get_time_remaining()) {
+        //         s_finished = true;
+        //     }
+        // }
+
+        return [s_finished, prev_leg, next_leg, target_pos, target_vel, target_accel];
+    }
+
+    // increment time pointer and return the position, velocity and acceleration vectors relative to the destination
+    move_to_pos_vel_accel(dt, pos, vel, accel)
+    {
+        if (!(pos instanceof Vector) || !(vel instanceof Vector) || !(accel instanceof Vector)) {
+            throw new Error("pos/vel/accel must be Vectors")
+        }
+
+        this.advance_time(dt);
+
+        let [scurve_J1, scurve_A1, scurve_V1, scurve_P1] = this.get_jerk_accel_vel_pos_at_time(this.time);
+
+        pos = pos.add(this.delta_unit.scaler_multiply(scurve_P1));
+        vel = vel.add(this.delta_unit.scaler_multiply(scurve_V1));
+        accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
+        this.position_sq = scurve_P1**2;
+
+        // update logging
+        this.logger.time.push(this.time);
+        this.logger.pos.push(scurve_P1*0.01);
+        this.logger.vel.push(scurve_V1*0.01);
+        this.logger.accel.push(scurve_A1*0.01);
+        this.logger.jerk.push(scurve_J1*0.01);
+
+        // change from relative to destination
+        pos = pos.subtract(this.track);
+
+        return [pos, vel, accel]
+    }
+
+    // increment time pointer and return the position, velocity and acceleration vectors relative to the origin
+    move_from_pos_vel_accel(dt, pos, vel, accel)
+    {
+        if (!(pos instanceof Vector) || !(vel instanceof Vector) || !(accel instanceof Vector)) {
+            throw new Error("pos/vel/accel must be Vectors")
+        }
+
+        this.advance_time(dt);
+
+        let [scurve_J1, scurve_A1, scurve_V1, scurve_P1] = this.get_jerk_accel_vel_pos_at_time(this.time);
+
+        pos = pos.add(this.delta_unit.scaler_multiply(scurve_P1));
+        vel = vel.add(this.delta_unit.scaler_multiply(scurve_V1));
+        accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
+        this.position_sq = scurve_P1**2;
+
+        // update logging
+        this.logger.time.push(this.time);
+        this.logger.pos.push(scurve_P1*0.01);
+        this.logger.vel.push(scurve_V1*0.01);
+        this.logger.accel.push(scurve_A1*0.01);
+        this.logger.jerk.push(scurve_J1*0.01);
+
+        return [pos, vel, accel];
+    }
+
+    // return the position, velocity and acceleration vectors relative to the origin at a specified time along the path
+    move_from_time_pos_vel_accel(time_now, pos, vel, accel)
+    {
+        if (!(pos instanceof Vector) || !(vel instanceof Vector) || !(accel instanceof Vector)) {
+            throw new Error("pos/vel/accel must be Vectors")
+        }
+
+        let [scurve_J1, scurve_A1, scurve_V1, scurve_P1] = this.get_jerk_accel_vel_pos_at_time(time_now);
+
+        pos = pos.add(this.delta_unit.scaler_multiply(scurve_P1));
+        vel = vel.add(this.delta_unit.scaler_multiply(scurve_V1));
+        accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
+
+        // update logging
+        this.logger.time.push(time_now);
+        this.logger.pos.push(scurve_P1*0.01);
+        this.logger.vel.push(scurve_V1*0.01);
+        this.logger.accel.push(scurve_A1*0.01);
+        this.logger.jerk.push(scurve_J1*0.01);
+
+        return [pos, vel, accel];
+    }
+
+    // calculate the jerk, acceleration, velocity and position at the provided time
+    get_jerk_accel_vel_pos_at_time(time_now)
+    {
+        // start with zeros as function is void and we want to guarantee all outputs are initialised
+        let Jt_out = 0.0;
+        let At_out = 0.0;
+        let Vt_out = 0.0;
+        let Pt_out = 0.0;
+        if (this.num_segs != this.segments_max) {
+            return [Jt_out, At_out, Vt_out, Pt_out];
+        }
+
+        let Jtype;
+        let pnt = this.num_segs;
+        let Jm, tj, T0, A0, V0, P0;
+
+        // find active segment at time_now
+        // TODO: we could look to keep an "active segment" instead of having to find the one we want every time
+        for (let i = 0; i < this.num_segs; i++) {
+            if (time_now < this.segment[this.num_segs - 1 - i].end_time) {
+                pnt = this.num_segs - 1 - i;
+            }
+        }
+
+        if (pnt == 0) {
+            // TODO: not sure we need this, we should have filled in the segments correctly in the first place
+            Jtype = SegmentType.CONSTANT_JERK;
+            Jm = 0.0;
+            tj = 0.0;
+            T0 = this.segment[pnt].end_time;
+            A0 = this.segment[pnt].end_accel;
+            V0 = this.segment[pnt].end_vel;
+            P0 = this.segment[pnt].end_pos;
+
+        } else if (pnt == this.num_segs) {
+            // TODO: not sure we need this, we should have filled in the segments correctly in the first place
+            Jtype = SegmentType.CONSTANT_JERK;
+            Jm = 0.0;
+            tj = 0.0;
+            T0 = this.segment[pnt - 1].end_time;
+            A0 = this.segment[pnt - 1].end_accel;
+            V0 = this.segment[pnt - 1].end_vel;
+            P0 = this.segment[pnt - 1].end_pos;
+
+        } else {
+            Jtype = this.segment[pnt].seg_type;
+            Jm = this.segment[pnt].jerk_ref;
+            tj = this.segment[pnt].end_time - this.segment[pnt - 1].end_time;
+            T0 = this.segment[pnt - 1].end_time;
+            A0 = this.segment[pnt - 1].end_accel;
+            V0 = this.segment[pnt - 1].end_vel;
+            P0 = this.segment[pnt - 1].end_pos;
+        }
+
+        switch (Jtype) {
+            case SegmentType.CONSTANT_JERK:
+                [Jt_out, At_out, Vt_out, Pt_out] = this.calc_javp_for_segment_const_jerk(time_now - T0, Jm, A0, V0, P0);
+                break;
+            case SegmentType.POSITIVE_JERK:
+                [Jt_out, At_out, Vt_out, Pt_out] = this.calc_javp_for_segment_incr_jerk(time_now - T0, tj, Jm, A0, V0, P0);
+                break;
+            case SegmentType.NEGATIVE_JERK:
+                [Jt_out, At_out, Vt_out, Pt_out] = this.calc_javp_for_segment_decr_jerk(time_now - T0, tj, Jm, A0, V0, P0);
+                break;
+        }
+
+        // position along the s-curve leg cannot go backwards
+        // TODO: Not really sure we need this?
+        Pt_out = Math.max(0.0, Pt_out);
+
+        return [Jt_out, At_out, Vt_out, Pt_out];
+    }
+
+    // calculate the jerk, acceleration, velocity and position at time time_now when running the constant jerk time segment
+    calc_javp_for_segment_const_jerk(time_now, J0, A0, V0, P0)
+    {
+        let Jt = J0;
+        let At = A0 + J0 * time_now;
+        let Vt = V0 + A0 * time_now + 0.5 * J0 * (time_now * time_now);
+        let Pt = P0 + V0 * time_now + 0.5 * A0 * (time_now * time_now) + (1.0 / 6.0) * J0 * (time_now * time_now * time_now);
+        return [Jt, At, Vt, Pt];
+    }
+
+    // Calculate the jerk, acceleration, velocity and position at time time_now when running the increasing jerk magnitude time segment based on a raised cosine profile
+    calc_javp_for_segment_incr_jerk(time_now, tj, Jm, A0, V0, P0)
+    {
+        let Jt = 0.0;
+        let At = A0;
+        let Vt = V0;
+        let Pt = P0;
+
+        if (!is_positive(tj)) {
+            return [Jt, At, Vt, Pt];
+        }
+
+        const Alpha = Jm * 0.5;
+        const Beta = M_PI / tj;
+        Jt = Alpha * (1.0 - Math.cos(Beta * time_now));
+        At = A0 + Alpha * time_now - (Alpha / Beta) * Math.sin(Beta * time_now);
+        Vt = V0 + A0 * time_now + (Alpha * 0.5) * (time_now * time_now) + (Alpha / (Beta * Beta)) * Math.cos(Beta * time_now) - Alpha / (Beta * Beta);
+        Pt = P0 + V0 * time_now + 0.5 * A0 * (time_now * time_now) + (-Alpha / (Beta * Beta)) * time_now + Alpha * (time_now * time_now * time_now) / 6.0 + (Alpha / (Beta * Beta * Beta)) * Math.sin(Beta * time_now);
+        return [Jt, At, Vt, Pt];
+    }
+
+    // Calculate the jerk, acceleration, velocity and position at time time_now when running the decreasing jerk magnitude time segment based on a raised cosine profile
+    calc_javp_for_segment_decr_jerk(time_now, tj, Jm, A0, V0, P0)
+    {
+        let Jt = 0.0;
+        let At = A0;
+        let Vt = V0;
+        let Pt = P0;
+
+        if (!is_positive(tj)) {
+            return [Jt, At, Vt, Pt];
+        }
+
+        const Alpha = Jm * 0.5;
+        const Beta = M_PI / tj;
+        const AT = Alpha * tj;
+        const VT = Alpha * ((tj * tj) * 0.5 - 2.0 / (Beta * Beta));
+        const PT = Alpha * ((-1.0 / (Beta * Beta)) * tj + (1.0 / 6.0) * (tj * tj * tj));
+        Jt = Alpha * (1.0 - Math.cos(Beta * (time_now + tj)));
+        At = (A0 - AT) + Alpha * (time_now + tj) - (Alpha / Beta) * Math.sin(Beta * (time_now + tj));
+        Vt = (V0 - VT) + (A0 - AT) * time_now + 0.5 * Alpha * (time_now + tj) * (time_now + tj) + (Alpha / (Beta * Beta)) * Math.cos(Beta * (time_now + tj)) - Alpha / (Beta * Beta);
+        Pt = (P0 - PT) + (V0 - VT) * time_now + 0.5 * (A0 - AT) * (time_now * time_now) + (-Alpha / (Beta * Beta)) * (time_now + tj) + (Alpha / 6.0) * (time_now + tj) * (time_now + tj) * (time_now + tj) + (Alpha / (Beta * Beta * Beta)) * Math.sin(Beta * (time_now + tj));
+        return [Jt, At, Vt, Pt];
+    }
+
     is_valid()
     {
         // check number of segments
@@ -704,6 +987,39 @@ class SCurve {
         }
         const SEG_DECEL_END = this.segments_max-1;
         return this.segment[SEG_DECEL_END].end_time;
+    }
+
+    // time left before sequence will complete
+    get_time_remaining()
+    {
+        if (this.num_segs != this.segments_max) {
+            return 0.0;
+        }
+        return this.segment[this.SEG_DECEL_END].end_time - this.time;
+    }
+
+    // return the current time elapsed
+    get_time_elapsed() { return this.time; }
+
+    // get desired maximum speed along track
+    get_speed_along_track() { return this.vel_max; }
+
+    // return time offset used to initiate the turn from leg
+    time_turn_out()
+    {
+        if (this.num_segs != this.segments_max) {
+            return 0.0;
+        }
+        return this.segment[this.SEG_TURN_OUT].end_time;
+    }
+
+    // return time offset used to initiate the turn onto leg
+    time_turn_in()
+    {
+        if (this.num_segs != this.segments_max) {
+            return 0.0;
+        }
+        return this.segment[this.SEG_TURN_IN].end_time;
     }
 
 }
@@ -855,12 +1171,46 @@ class WPNav {
             }
         }
 
-    this.scurve_next_leg.init();
-    this.flags.fast_waypoint = false;   // default waypoint back to slow
-    this.flags.reached_destination = false;
+        this.scurve_next_leg.init();
+        this.flags.fast_waypoint = false;   // default waypoint back to slow
+        this.flags.reached_destination = false;
 
-    return true;
+        return true; // we can't actually fail this as we don't handle terrain tailes in this js version
+    }
 
+    /// advance_wp_target_along_track - move target location along track from origin to destination
+    advance_wp_target_along_track(dt)
+    {
+        // target position, velocity and acceleration from straight line or spline calculators
+        let target_pos = new Vector();
+        let target_vel = new Vector();
+        let target_accel = new Vector();
+
+        let s_finished = false;
+
+        // update target position, velocity and acceleration
+        target_pos = this.origin;
+        [s_finished, this.scurve_prev_leg, this.scurve_next_leg, target_pos, target_vel, target_accel] = this.scurve_this_leg.advance_target_along_track(this.scurve_prev_leg, this.scurve_next_leg, this.wp_radius_cm, this.scurve_accel_corner, this.flags.fast_waypoint, this.track_scalar_dt * dt, target_pos, target_vel, target_accel);
+
+
+        // // check if we've reached the waypoint
+        // if (!this.flags.reached_destination) {
+        //     if (s_finished) {
+        //         // "fast" waypoints are complete once the intermediate point reaches the destination
+        //         if (this.flags.fast_waypoint) {
+        //             this.flags.reached_destination = true;
+        //         } else {
+        //             // regular waypoints also require the copter to be within the waypoint radius
+        //             const dist_to_dest = curr_pos - _destination;
+        //             if (dist_to_dest.length_squared() <= sq(_wp_radius_cm)) {
+        //                 _flags.reached_destination = true;
+        //             }
+        //         }
+        //     }
+        // }
+
+        // successfully advanced along track
+        return [target_pos, target_vel, target_accel];
     }
 
     set_wp_destination_loc (destination) {
@@ -1039,11 +1389,29 @@ class Vector {
         return Math.sqrt(this.length_squared());
     }
 
+    add(v2) {
+        return new Vector(this.x + v2.x,
+                          this.y + v2.y,
+                          this.z + v2.z);
+    }
+
     subtract(v2) {
         return new Vector(this.x - v2.x,
                           this.y - v2.y,
                           this.z - v2.z);
     }
+
+    scaler_multiply(s) {
+        return new Vector(this.x * s,
+                          this.y * s,
+                          this.z * s);
+    }
+
+    // scaler_divide(s) {
+    //     return new Vector(this.x / s,
+    //                       this.y / s,
+    //                       this.z / s);
+    // }
 
     normalize() {
         const v_length = this.length();
@@ -1084,8 +1452,25 @@ function run_flare()
 
     wp_nav.set_wp_destination_loc(point2);
 
+    // now in wp_run()
+    let t = 0.0;
+    const dt = 1/200;
+    const T = 10;
+    const n_steps = Math.floor(T/dt);
+    let s_pos = [];
+    let pos_vec = [];
+    let s_vel = [];
+    let s_accel = [];
+    let time = [];
+    for (let i = 0; i < n_steps; i++) {
+        let [pos_cm, vel_cms, accel_cmss] = wp_nav.advance_wp_target_along_track(dt)
 
-
+        t += dt;
+        s_pos.push(pos_cm.scaler_multiply(0.01)); // (m)
+        s_vel.push(vel_cms.scaler_multiply(0.01));              // (m/s)
+        s_accel.push(accel_cmss.scaler_multiply(0.01));          // (m/s/s)
+        time.push(t);
+    }
 
     // Update plots
     wp_pos_plot.data[0].x = [point1.x, point2.x, point3.x, point4.x];
@@ -1094,29 +1479,26 @@ function run_flare()
 
     Plotly.redraw("waypoint_plot")
 
-    // jerk_plot.data[0].x = t
-    // jerk_plot.data[0].y = traj.j
-    // jerk_plot.data[1].x = t
-    // jerk_plot.data[1].y = calcd_traj.j
-    // Plotly.redraw("jerk_plot")
+    jerk_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
+    // jerk_plot.data[0].y = wp_nav.scurve_this_leg.logger.jerk.map(v => v.length()); // Total jerk in 1D scurve
+    jerk_plot.data[0].y = wp_nav.scurve_this_leg.logger.jerk; // Total jerk in 1D scurve
 
-    // accel_plot.data[0].x = t
-    // accel_plot.data[0].y = traj.a
-    // accel_plot.data[1].x = t
-    // accel_plot.data[1].y = calcd_traj.a
-    // Plotly.redraw("accel_plot")
+    Plotly.redraw("jerk_plot")
 
-    // vel_plot.data[0].x = t
-    // vel_plot.data[0].y = traj.v
-    // vel_plot.data[1].x = t
-    // vel_plot.data[1].y = calcd_traj.v
-    // Plotly.redraw("vel_plot")
+    accel_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
+    accel_plot.data[0].y = wp_nav.scurve_this_leg.logger.accel; // Total accel in 1D scurve
 
-    // pos_plot.data[0].x = t
-    // pos_plot.data[0].y = traj.p
-    // pos_plot.data[1].x = t
-    // pos_plot.data[1].y = calcd_traj.p
-    // Plotly.redraw("pos_plot")
+    Plotly.redraw("accel_plot");
+
+    vel_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
+    vel_plot.data[0].y = wp_nav.scurve_this_leg.logger.vel; // Total vel in 1D scurve
+
+    Plotly.redraw("vel_plot");
+
+    pos_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
+    pos_plot.data[0].y = wp_nav.scurve_this_leg.logger.pos; // Total pos in 1D scurve
+
+    Plotly.redraw("pos_plot");
 
 }
 
