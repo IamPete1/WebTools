@@ -1422,7 +1422,7 @@ class Vector {
 }
 
 
-function run_flare()
+function update()
 {
 
     let point1 = new Vector(parseFloat(document.getElementById("first_wp_x").value),
@@ -1460,7 +1460,6 @@ function run_flare()
     const T = 100;
     const n_steps = Math.floor(T/dt);
     let s_pos = [];
-    let pos_vec = [];
     let s_vel = [];
     let s_accel = [];
     let time = [];
