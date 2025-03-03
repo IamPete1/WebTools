@@ -13,8 +13,17 @@ function initial_load()
     let plot;
 
     // Waypoints
-    wp_pos_plot.data = [{ type:'scatter3d',  x:[], y:[], z:[], name: 'WP', mode: 'lines+markers', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
-                        { type:'scatter3d',  x:[], y:[], z:[], name: 'Target', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³", line: { width: 10 }}];
+    wp_pos_plot.data = [{ type:'scatter3d',  x:[], y:[], z:[], name: 'WP', mode: 'lines+markers', hovertemplate: "<extra></extra>%{x:.0f} m<br>%{y:.0f} m<br>%{z:.0f} m" },
+                        { type:'scatter3d',  x:[], y:[], z:[],
+                          name: 'Target',
+                          mode: 'lines',
+                          hovertemplate: "<extra></extra>N = %{y:.0f} m<br>E = %{x:.0f} m<br>U = %{z:.0f} m<br>Vel = %{line.color:.2f} m/s",
+                          line: { width: 10,
+                                  color: [1], // Coloring based on Z values
+                                  colorscale: "Viridis", // Color gradient
+                                  colorbar: { title: "Vel Magnitude" }
+                                }
+                         }];
 
     wp_pos_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -1484,6 +1493,8 @@ function update()
     wp_pos_plot.data[1].x = s_pos.map(v => v.x);
     wp_pos_plot.data[1].y = s_pos.map(v => v.y);
     wp_pos_plot.data[1].z = s_pos.map(v => v.z);
+    // colour the line based on velocity magnitude
+    wp_pos_plot.data[1].line.color = s_vel.map(v => v.length());
 
     Plotly.redraw("waypoint_plot")
 
