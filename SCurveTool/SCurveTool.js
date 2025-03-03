@@ -1448,14 +1448,16 @@ function run_flare()
 
     // wp_start()
     // This pretty much follows the mode auto logic in copter
-    wp_nav.wp_and_spline_init(0.0, point1);
+    let point1_cm = point1.scaler_multiply(100.0)
+    wp_nav.wp_and_spline_init(0.0, point1_cm);
 
-    wp_nav.set_wp_destination_loc(point2);
+    let point2_cm = point2.scaler_multiply(100.0)
+    wp_nav.set_wp_destination_loc(point2_cm);
 
     // now in wp_run()
     let t = 0.0;
-    const dt = 1/200;
-    const T = 10;
+    const dt = 1/100;
+    const T = 100;
     const n_steps = Math.floor(T/dt);
     let s_pos = [];
     let pos_vec = [];
