@@ -1466,9 +1466,9 @@ function run_flare()
         let [pos_cm, vel_cms, accel_cmss] = wp_nav.advance_wp_target_along_track(dt)
 
         t += dt;
-        s_pos.push(pos_cm.scaler_multiply(0.01)); // (m)
-        s_vel.push(vel_cms.scaler_multiply(0.01));              // (m/s)
-        s_accel.push(accel_cmss.scaler_multiply(0.01));          // (m/s/s)
+        s_pos.push(pos_cm.scaler_multiply(0.01));         // (m)
+        s_vel.push(vel_cms.scaler_multiply(0.01));        // (m/s)
+        s_accel.push(accel_cmss.scaler_multiply(0.01));   // (m/s/s)
         time.push(t);
     }
 
