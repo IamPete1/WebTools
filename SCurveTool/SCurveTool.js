@@ -13,7 +13,8 @@ function initial_load()
     let plot;
 
     // Waypoints
-    wp_pos_plot.data = [{ type:'scatter3d',  x:[], y:[], z:[], name: 'path', mode: 'lines+markers', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }]
+    wp_pos_plot.data = [{ type:'scatter3d',  x:[], y:[], z:[], name: 'WP', mode: 'lines+markers', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
+                        { type:'scatter3d',  x:[], y:[], z:[], name: 'Target', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³", line: { width: 10 }}];
 
     wp_pos_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -31,7 +32,7 @@ function initial_load()
 
     // Jerk
     jerk_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
-                      { x:[], y:[], name: '---', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }]
+                      { x:[], y:[], name: '---', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }];
 
     jerk_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -1466,6 +1467,8 @@ function update()
     for (let i = 0; i < n_steps; i++) {
         let [pos_cm, vel_cms, accel_cmss] = wp_nav.advance_wp_target_along_track(dt)
 
+
+        // logging 3D kinematics to add to the 3D plot
         t += dt;
         s_pos.push(pos_cm.scaler_multiply(0.01));         // (m)
         s_vel.push(vel_cms.scaler_multiply(0.01));        // (m/s)
@@ -1477,6 +1480,10 @@ function update()
     wp_pos_plot.data[0].x = [point1.x, point2.x, point3.x, point4.x];
     wp_pos_plot.data[0].y = [point1.y, point2.y, point3.y, point4.y];
     wp_pos_plot.data[0].z = [point1.z, point2.z, point3.z, point4.z];
+
+    wp_pos_plot.data[1].x = s_pos.map(v => v.x);
+    wp_pos_plot.data[1].y = s_pos.map(v => v.y);
+    wp_pos_plot.data[1].z = s_pos.map(v => v.z);
 
     Plotly.redraw("waypoint_plot")
 
