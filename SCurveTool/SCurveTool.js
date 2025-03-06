@@ -6,6 +6,7 @@ pos_plot = {}
 vel_plot = {}
 accel_plot = {}
 jerk_plot = {}
+snap_plot = {}
 wp_pos_plot = {}
 function initial_load()
 {
@@ -38,6 +39,22 @@ function initial_load()
     plot = document.getElementById("waypoint_plot")
     Plotly.purge(plot)
     Plotly.newPlot(plot, wp_pos_plot.data, wp_pos_plot.layout, { displaylogo: false })
+
+    // Snap
+    snap_plot.data = [];
+
+    snap_plot.layout = {
+        legend: { itemclick: false, itemdoubleclick: false },
+        margin: { b: 50, l: 60, r: 50, t: 20 },
+        xaxis: { title: {text: time_scale_label } },
+        yaxis: { title: {text: "Snap (m/s⁴)" } },
+        showlegend: true
+    }
+
+    plot = document.getElementById("snap_plot")
+    Plotly.purge(plot)
+    Plotly.newPlot(plot, snap_plot.data, snap_plot.layout, { displaylogo: false })
+
 
     // Jerk
     jerk_plot.data = [];
@@ -118,6 +135,7 @@ function initial_load()
 
     // Link all time axis
     link_plot_axis_range([
+        ["snap_plot", "x", "", snap_plot],
         ["jerk_plot", "x", "", jerk_plot],
         ["accel_plot", "x", "", accel_plot],
         ["vel_plot", "x", "", vel_plot],
@@ -126,6 +144,7 @@ function initial_load()
 
     // // Link plot reset
     link_plot_reset([
+        ["snap_plot", snap_plot],
         ["jerk_plot", jerk_plot],
         ["accel_plot", accel_plot],
         ["vel_plot", vel_plot],
@@ -229,11 +248,12 @@ class KinematicLogging {
     constructor()
     {
         this.wp_number = []; // Store which mission WP the vehicle is traveling too whilst using this s-curve
-        this.time = [];      // (s) Array of time
-        this.pos = [];       // (m) Array of type Vector
-        this.vel = [];       // (m/s) Array of type Vector
-        this.accel = [];     // (m/s/s) Array of type Vector
-        this.jerk = [];      // (m/s/s/s) Array of type Vector
+        this.time = [];      // (s)
+        this.pos = [];       // (m)
+        this.vel = [];       // (m/s)
+        this.accel = [];     // (m/s/s)
+        this.jerk = [];      // (m/s/s/s)
+        this.snap = [];      // (m/s/s/s/s)
     }
 }
 
@@ -247,6 +267,7 @@ class SCurve {
 
         this.track = new Vector();
         this.delta_unit = new Vector();
+        this.St = 0.0; // Used for logging snap at time t
 
         this.SEG_INIT = 0;
         this.SEG_ACCEL_END = 7;
@@ -761,6 +782,7 @@ class SCurve {
         this.logger.vel.push(scurve_V1*0.01);
         this.logger.accel.push(scurve_A1*0.01);
         this.logger.jerk.push(scurve_J1*0.01);
+        this.logger.snap.push(this.St*0.01);
 
         // change from relative to destination
         pos = pos.subtract(this.track);
@@ -791,6 +813,7 @@ class SCurve {
         this.logger.vel.push(scurve_V1*0.01);
         this.logger.accel.push(scurve_A1*0.01);
         this.logger.jerk.push(scurve_J1*0.01);
+        this.logger.snap.push(this.St*0.01);
 
         return [pos, vel, accel];
     }
@@ -815,14 +838,26 @@ class SCurve {
         this.logger.vel.push(scurve_V1*0.01);
         this.logger.accel.push(scurve_A1*0.01);
         this.logger.jerk.push(scurve_J1*0.01);
+        this.logger.snap.push(this.St*0.01);
 
         return [pos, vel, accel];
+    }
+
+    // Calculate the snap at given time.  This is not used in AP, but used here to plot the
+    // the snap target in this tool
+    get_snap_at_time(time_now, Jm, tj)
+    {
+        const Alpha = Jm * 0.5;
+        const Beta = M_PI / tj;
+        const St = Alpha / Beta * Math.sin(Beta * time_now);
+        return St;
     }
 
     // calculate the jerk, acceleration, velocity and position at the provided time
     get_jerk_accel_vel_pos_at_time(time_now)
     {
         // start with zeros as function is void and we want to guarantee all outputs are initialised
+        this.St = 0.0;
         let Jt_out = 0.0;
         let At_out = 0.0;
         let Vt_out = 0.0;
@@ -875,12 +910,15 @@ class SCurve {
 
         switch (Jtype) {
             case SegmentType.CONSTANT_JERK:
+                this.St = 0.0; // Store for logging
                 [Jt_out, At_out, Vt_out, Pt_out] = this.calc_javp_for_segment_const_jerk(time_now - T0, Jm, A0, V0, P0);
                 break;
             case SegmentType.POSITIVE_JERK:
+                this.St = this.get_snap_at_time(time_now - T0, Jm, tj); // Store for logging
                 [Jt_out, At_out, Vt_out, Pt_out] = this.calc_javp_for_segment_incr_jerk(time_now - T0, tj, Jm, A0, V0, P0);
                 break;
             case SegmentType.NEGATIVE_JERK:
+                this.St = this.get_snap_at_time(time_now - T0, -Jm, tj); // Store for logging
                 [Jt_out, At_out, Vt_out, Pt_out] = this.calc_javp_for_segment_decr_jerk(time_now - T0, tj, Jm, A0, V0, P0);
                 break;
         }
@@ -1034,10 +1072,6 @@ class SCurve {
 
 }
 
-// Example Usage
-// let curve = new SCurve();
-// curve.calculateTrack({ x: 0, y: 0, z: 0 }, { x: 10, y: 10, z: 5 }, 5, 2, 2, 1, 1, 0.1, 0.05);
-// curve.debug();
 
 class WPNav {
 
@@ -1442,6 +1476,8 @@ class Vector {
 
 function update()
 {
+    // reset all of the plots 
+    initial_load();
 
     let point1 = new Vector(parseFloat(document.getElementById("first_wp_x").value),
                             parseFloat(document.getElementById("first_wp_y").value),
@@ -1469,14 +1505,13 @@ function update()
 
     // wp_start()
     // This pretty much follows the mode auto logic in copter
-
     wp_nav.wp_and_spline_init(0.0, point1_cm);
 
     wp_nav.set_wp_destination_loc(point2_cm);
 
     // now in wp_run()
     let t = 0.0;
-    const dt = 1/100;
+    const dt = 1/50;
     const T = 100;
     const n_steps = Math.floor(T/dt);
     let pos_targ = [];
@@ -1497,16 +1532,24 @@ function update()
 
             // Jerk plot
             let temp_plot_def = { x:time.slice(last_sc_point),
-                                 y:wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point),
-                                 name: `Leg ${i}`,
-                                 mode: 'lines',
-                                 hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
+                                  y:wp_nav.scurve_this_leg.logger.snap.slice(last_sc_point),
+                                  name: `Leg ${wp_index-1}`,
+                                  mode: 'lines',
+                                  hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s⁴" };
+            snap_plot.data.push(temp_plot_def);
+
+            // Jerk plot
+            temp_plot_def = { x:time.slice(last_sc_point),
+                              y:wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point),
+                              name: `Leg ${wp_index-1}`,
+                              mode: 'lines',
+                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
             jerk_plot.data.push(temp_plot_def);
 
             // Accel plot
             temp_plot_def = { x:time.slice(last_sc_point),
                               y:wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point),
-                              name: `Leg ${i}`,
+                              name: `Leg ${wp_index-1}`,
                               mode: 'lines',
                               hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
             accel_plot.data.push(temp_plot_def);
@@ -1514,7 +1557,7 @@ function update()
             // Vel plot
             temp_plot_def = { x:time.slice(last_sc_point),
                               y:wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point),
-                              name: `Leg ${i}`,
+                              name: `Leg ${wp_index-1}`,
                               mode: 'lines',
                               hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
             vel_plot.data.push(temp_plot_def);
@@ -1522,15 +1565,16 @@ function update()
             // Accel plot
             temp_plot_def = { x:time.slice(last_sc_point),
                               y:wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point),
-                              name: `Leg ${i}`,
+                              name: `Leg ${wp_index-1}`,
                               mode: 'lines',
                               hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
             pos_plot.data.push(temp_plot_def);
 
             // store the last index from the prior s-curve so we know how to split up the next s-curve
-            last_sc_point = wp_nav.scurve_this_leg.logger.jerk.length+1;
+            last_sc_point = wp_nav.scurve_this_leg.logger.jerk.length-1;
 
 
+            // Check for loading next waypoints
             if (wp_index == 2) {
                 wp_nav.set_wp_destination_loc(point3_cm);
                 wp_index += 1;
@@ -1563,6 +1607,7 @@ function update()
 
     Plotly.redraw("waypoint_plot")
 
+    Plotly.redraw("snap_plot")
     Plotly.redraw("jerk_plot")
     Plotly.redraw("accel_plot");
     Plotly.redraw("vel_plot");
