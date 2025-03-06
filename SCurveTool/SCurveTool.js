@@ -40,8 +40,7 @@ function initial_load()
     Plotly.newPlot(plot, wp_pos_plot.data, wp_pos_plot.layout, { displaylogo: false })
 
     // Jerk
-    jerk_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" },
-                      { x:[], y:[], name: '---', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" }];
+    jerk_plot.data = [];
 
     jerk_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -56,8 +55,7 @@ function initial_load()
     Plotly.newPlot(plot, jerk_plot.data, jerk_plot.layout, { displaylogo: false })
 
     // Acceleration
-    accel_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" },
-                       { x:[], y:[], name: 'output', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" }]
+    accel_plot.data = []
 
     accel_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -72,8 +70,7 @@ function initial_load()
     Plotly.newPlot(plot, accel_plot.data, accel_plot.layout, { displaylogo: false });
 
     // velocity
-    vel_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" },
-                     { x:[], y:[], name: 'output', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" }];
+    vel_plot.data = [];
 
     vel_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -96,10 +93,7 @@ function initial_load()
     Plotly.newPlot(plot, vel_plot.data, vel_plot.layout, { displaylogo: false })
 
     // position
-    pos_plot.data = [{ x:[], y:[], name: 'scurve-log', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" },
-                     { x:[], y:[], name: 'output', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" }]
-                    //  { x:[], y:[], name: 'Y', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" },
-                    //  { x:[], y:[], name: 'Z', mode: 'lines', hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" }]
+    pos_plot.data = []
 
     pos_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -234,11 +228,12 @@ class Segments {
 class KinematicLogging {
     constructor()
     {
-        this.time = [];     // (s) Array of time
-        this.pos = [];      // (m) Array of type Vector
-        this.vel = [];      // (m/s) Array of type Vector
-        this.accel = [];    // (m/s/s) Array of type Vector
-        this.jerk = [];     // (m/s/s/s) Array of type Vector
+        this.wp_number = []; // Store which mission WP the vehicle is traveling too whilst using this s-curve
+        this.time = [];      // (s) Array of time
+        this.pos = [];       // (m) Array of type Vector
+        this.vel = [];       // (m/s) Array of type Vector
+        this.accel = [];     // (m/s/s) Array of type Vector
+        this.jerk = [];      // (m/s/s/s) Array of type Vector
     }
 }
 
@@ -265,7 +260,7 @@ class SCurve {
     }
 
     // Initialization function
-    init() {
+    init(wp) {
         this.snap_max = 0.0;
         this.jerk_max = 0.0;
         this.accel_max = 0.0;
@@ -278,6 +273,8 @@ class SCurve {
         this.track.zero();
         this.delta_unit.zero();
         this.position_sq = 0.0;
+
+        this.wp_number = wp // Used in debugging to figure out which scurve we are looking at in the inspector
     }
 
     // increment the internal time
@@ -295,8 +292,8 @@ class SCurve {
     }
 
     // Calculate track motion profile between two 3D points
-    calculate_track(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z, snap_maximum, jerk_maximum) {
-        this.init();
+    calculate_track(origin, destination, speed_xy, speed_up, speed_down, accel_xy, accel_z, snap_maximum, jerk_maximum, wp_number) {
+        this.init(this.wp_number);
 
         // Compute vector between origin and destination
         let track_temp = destination.subtract(origin);
@@ -758,6 +755,7 @@ class SCurve {
         this.position_sq = scurve_P1**2;
 
         // update logging
+        this.logger.wp_number.push(this.wp_number);
         this.logger.time.push(this.time);
         this.logger.pos.push(scurve_P1*0.01);
         this.logger.vel.push(scurve_V1*0.01);
@@ -787,6 +785,7 @@ class SCurve {
         this.position_sq = scurve_P1**2;
 
         // update logging
+        this.logger.wp_number.push(this.wp_number);
         this.logger.time.push(this.time);
         this.logger.pos.push(scurve_P1*0.01);
         this.logger.vel.push(scurve_V1*0.01);
@@ -810,6 +809,7 @@ class SCurve {
         accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
 
         // update logging
+        this.logger.wp_number.push(this.wp_number);
         this.logger.time.push(time_now);
         this.logger.pos.push(scurve_P1*0.01);
         this.logger.vel.push(scurve_V1*0.01);
@@ -1069,6 +1069,8 @@ class WPNav {
         this.scurve_this_leg = new SCurve();
         this.scurve_next_leg = new SCurve();
 
+        this.wp_number = 0; // used to keep track of which wp number were on
+
         this.track_scalar_dt = 1.0;
 
         this.flags = ({reached_destination: false, fast_waypoint: false, wp_yaw_set: false});
@@ -1105,9 +1107,9 @@ class WPNav {
         }
         this.calc_scurve_jerk_and_snap();
 
-        this.scurve_prev_leg.init();
-        this.scurve_this_leg.init();
-        this.scurve_next_leg.init();
+        this.scurve_prev_leg.init(this.wp_number);
+        this.scurve_this_leg.init(this.wp_number+1);
+        this.scurve_next_leg.init(this.wp_number+2);
         this.track_scalar_dt = 1.0;
 
         this.flags.reached_destination = true;
@@ -1116,6 +1118,8 @@ class WPNav {
         // initialise origin and destination to stopping point
         this.origin = stopping_point;
         this.destination = stopping_point;
+
+        this.wp_number += 1;
     }
 
     update_wpnav() {
@@ -1154,7 +1158,9 @@ class WPNav {
      */
     set_wp_destination (destination) {
 
-        this.scurve_prev_leg.init();
+        this.wp_number += 1;
+
+        this.scurve_prev_leg.init(this.wp_number-1);
         let origin_speed = 0.0;
 
         // use previous destination as origin
@@ -1173,7 +1179,7 @@ class WPNav {
             this.scurve_this_leg.calculate_track(this.origin, this.destination,
                                                 this.pos_control.get_max_speed_xy_cms(), this.pos_control.get_max_speed_up_cms(), this.pos_control.get_max_speed_down_cms(),
                                                 this.wp_accel_cmss, this.wp_accel_z_cmss,
-                                                this.scurve_snap * 100.0, this.scurve_jerk * 100.0);
+                                                this.scurve_snap * 100.0, this.scurve_jerk * 100.0, this.wp_number);
 
             if (!is_zero(origin_speed)) {
                 // rebuild start of scurve if we have a non-zero origin speed
@@ -1181,8 +1187,8 @@ class WPNav {
             }
         }
 
-        this.scurve_next_leg.init();
-        this.flags.fast_waypoint = false;   // default waypoint back to slow
+        this.scurve_next_leg.init(this.wp_number+1);
+        this.flags.fast_waypoint = false;//false;   // default waypoint back to slow
         this.flags.reached_destination = false;
 
         return true; // we can't actually fail this as we don't handle terrain tailes in this js version
@@ -1471,13 +1477,19 @@ function update()
     const dt = 1/100;
     const T = 100;
     const n_steps = Math.floor(T/dt);
-    let s_pos = [];
+    let pos_targ = [];
+    let vel_targ = [];
+    let accel_targ = [];
+    let s_pos = []; // data saved from the current s-curve
     let s_vel = [];
     let s_accel = [];
+    let s_jerk = [];
+    let s_time = []; //time arrays for each current s-curve
+    let last_sc_point = 0;
     let time = [];
+    let wp_index = 2;
     for (let i = 0; i < n_steps; i++) {
         let [pos_cm, vel_cms, accel_cmss] = wp_nav.advance_wp_target_along_track(dt)
-
 
         // logging 3D kinematics to add to the 3D plot
         t += dt;
@@ -1485,6 +1497,37 @@ function update()
         s_vel.push(vel_cms.scaler_multiply(0.01));        // (m/s)
         s_accel.push(accel_cmss.scaler_multiply(0.01));   // (m/s/s)
         time.push(t);
+
+        if (wp_nav.flags.reached_destination) {
+
+            // save the scurve data so we can plot it later
+            s_jerk.push(wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point));
+            s_accel.push(wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point));
+            s_vel.push(wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point));
+            s_pos.push(wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point));
+            s_time.push(time.slice(last_sc_point));
+
+            // store the last index from the prior s-curve so we know how to split up the next s-curve
+            last_sc_point = wp_nav.scurve_this_leg.logger.jerk.length+1;
+
+
+            if (wp_index == 2) {
+                wp_nav.set_wp_destination_loc(point3_cm);
+                wp_index += 1;
+                continue;
+            }
+
+            if (wp_index == 3) {
+                wp_nav.set_wp_destination_loc(point4_cm);
+                wp_index += 1;
+                continue;
+            }
+
+            if (wp_index == 4) {
+                // Reached the end of the "mission"
+                break;
+            }
+        }
     }
 
     // Update plots
@@ -1492,33 +1535,54 @@ function update()
     wp_pos_plot.data[0].y = [point1.y, point2.y, point3.y, point4.y];
     wp_pos_plot.data[0].z = [point1.z, point2.z, point3.z, point4.z];
 
-    wp_pos_plot.data[1].x = s_pos.map(v => v.x);
-    wp_pos_plot.data[1].y = s_pos.map(v => v.y);
-    wp_pos_plot.data[1].z = s_pos.map(v => v.z);
+    wp_pos_plot.data[1].x = pos_targ.map(v => v.x);
+    wp_pos_plot.data[1].y = pos_targ.map(v => v.y);
+    wp_pos_plot.data[1].z = pos_targ.map(v => v.z);
     // colour the line based on velocity magnitude
-    wp_pos_plot.data[1].line.color = s_vel.map(v => v.length());
+    wp_pos_plot.data[1].line.color = vel_targ.map(v => v.length());
 
     Plotly.redraw("waypoint_plot")
 
-    jerk_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
+    // jerk_plot.data[0].x = time; // use global time, as s-curve time always starts at zero
     // jerk_plot.data[0].y = wp_nav.scurve_this_leg.logger.jerk.map(v => v.length()); // Total jerk in 1D scurve
-    jerk_plot.data[0].y = wp_nav.scurve_this_leg.logger.jerk; // Total jerk in 1D scurve
+    for (let i = 0; i < s_time.length; i++) {
+
+        // Jerk plot
+        let temp_plot_def = { x:s_time[i],
+                              y:s_jerk[i],
+                              name: `Leg ${i}`,
+                              mode: 'lines',
+                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
+        jerk_plot.data.push(temp_plot_def);
+
+        // Accel plot
+        temp_plot_def = { x:s_time[i],
+                          y:s_accel[i],
+                          name: `Leg ${i}`,
+                          mode: 'lines',
+                          hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
+        accel_plot.data.push(temp_plot_def);
+
+        // Vel plot
+        temp_plot_def = { x:s_time[i],
+                          y:s_vel[i],
+                          name: `Leg ${i}`,
+                          mode: 'lines',
+                          hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
+        vel_plot.data.push(temp_plot_def);
+
+        // Accel plot
+        temp_plot_def = { x:s_time[i],
+                          y:s_pos[i],
+                          name: `Leg ${i}`,
+                          mode: 'lines',
+                          hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
+        pos_plot.data.push(temp_plot_def);
+    }
 
     Plotly.redraw("jerk_plot")
-
-    accel_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
-    accel_plot.data[0].y = wp_nav.scurve_this_leg.logger.accel; // Total accel in 1D scurve
-
     Plotly.redraw("accel_plot");
-
-    vel_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
-    vel_plot.data[0].y = wp_nav.scurve_this_leg.logger.vel; // Total vel in 1D scurve
-
     Plotly.redraw("vel_plot");
-
-    pos_plot.data[0].x = wp_nav.scurve_this_leg.logger.time;
-    pos_plot.data[0].y = wp_nav.scurve_this_leg.logger.pos; // Total pos in 1D scurve
-
     Plotly.redraw("pos_plot");
 
 }
