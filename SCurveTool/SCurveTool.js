@@ -1459,17 +1459,19 @@ function update()
                             parseFloat(document.getElementById("last_wp_y").value),
                             parseFloat(document.getElementById("last_wp_z").value));
 
-
+    let point1_cm = point1.scaler_multiply(100.0)
+    let point2_cm = point2.scaler_multiply(100.0)
+    let point3_cm = point3.scaler_multiply(100.0)
+    let point4_cm = point4.scaler_multiply(100.0)
 
     // construct "waypoint nav", giving it a starting location.
     let wp_nav = new WPNav()
 
     // wp_start()
     // This pretty much follows the mode auto logic in copter
-    let point1_cm = point1.scaler_multiply(100.0)
+
     wp_nav.wp_and_spline_init(0.0, point1_cm);
 
-    let point2_cm = point2.scaler_multiply(100.0)
     wp_nav.set_wp_destination_loc(point2_cm);
 
     // now in wp_run()
@@ -1493,9 +1495,9 @@ function update()
 
         // logging 3D kinematics to add to the 3D plot
         t += dt;
-        s_pos.push(pos_cm.scaler_multiply(0.01));         // (m)
-        s_vel.push(vel_cms.scaler_multiply(0.01));        // (m/s)
-        s_accel.push(accel_cmss.scaler_multiply(0.01));   // (m/s/s)
+        pos_targ.push(pos_cm.scaler_multiply(0.01));         // (m)
+        vel_targ.push(vel_cms.scaler_multiply(0.01));        // (m/s)
+        accel_targ.push(accel_cmss.scaler_multiply(0.01));   // (m/s/s)
         time.push(t);
 
         if (wp_nav.flags.reached_destination) {
