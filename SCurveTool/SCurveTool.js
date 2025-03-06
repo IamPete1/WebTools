@@ -1481,12 +1481,6 @@ function update()
     const n_steps = Math.floor(T/dt);
     let pos_targ = [];
     let vel_targ = [];
-    let accel_targ = [];
-    let s_pos = []; // data saved from the current s-curve
-    let s_vel = [];
-    let s_accel = [];
-    let s_jerk = [];
-    let s_time = []; //time arrays for each current s-curve
     let last_sc_point = 0;
     let time = [];
     let wp_index = 2;
@@ -1497,17 +1491,41 @@ function update()
         t += dt;
         pos_targ.push(pos_cm.scaler_multiply(0.01));         // (m)
         vel_targ.push(vel_cms.scaler_multiply(0.01));        // (m/s)
-        accel_targ.push(accel_cmss.scaler_multiply(0.01));   // (m/s/s)
         time.push(t);
 
         if (wp_nav.flags.reached_destination) {
 
-            // save the scurve data so we can plot it later
-            s_jerk.push(wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point));
-            s_accel.push(wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point));
-            s_vel.push(wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point));
-            s_pos.push(wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point));
-            s_time.push(time.slice(last_sc_point));
+            // Jerk plot
+            let temp_plot_def = { x:time.slice(last_sc_point),
+                                 y:wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point),
+                                 name: `Leg ${i}`,
+                                 mode: 'lines',
+                                 hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
+            jerk_plot.data.push(temp_plot_def);
+
+            // Accel plot
+            temp_plot_def = { x:time.slice(last_sc_point),
+                              y:wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point),
+                              name: `Leg ${i}`,
+                              mode: 'lines',
+                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
+            accel_plot.data.push(temp_plot_def);
+
+            // Vel plot
+            temp_plot_def = { x:time.slice(last_sc_point),
+                              y:wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point),
+                              name: `Leg ${i}`,
+                              mode: 'lines',
+                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
+            vel_plot.data.push(temp_plot_def);
+
+            // Accel plot
+            temp_plot_def = { x:time.slice(last_sc_point),
+                              y:wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point),
+                              name: `Leg ${i}`,
+                              mode: 'lines',
+                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
+            pos_plot.data.push(temp_plot_def);
 
             // store the last index from the prior s-curve so we know how to split up the next s-curve
             last_sc_point = wp_nav.scurve_this_leg.logger.jerk.length+1;
@@ -1544,43 +1562,6 @@ function update()
     wp_pos_plot.data[1].line.color = vel_targ.map(v => v.length());
 
     Plotly.redraw("waypoint_plot")
-
-    // jerk_plot.data[0].x = time; // use global time, as s-curve time always starts at zero
-    // jerk_plot.data[0].y = wp_nav.scurve_this_leg.logger.jerk.map(v => v.length()); // Total jerk in 1D scurve
-    for (let i = 0; i < s_time.length; i++) {
-
-        // Jerk plot
-        let temp_plot_def = { x:s_time[i],
-                              y:s_jerk[i],
-                              name: `Leg ${i}`,
-                              mode: 'lines',
-                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
-        jerk_plot.data.push(temp_plot_def);
-
-        // Accel plot
-        temp_plot_def = { x:s_time[i],
-                          y:s_accel[i],
-                          name: `Leg ${i}`,
-                          mode: 'lines',
-                          hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
-        accel_plot.data.push(temp_plot_def);
-
-        // Vel plot
-        temp_plot_def = { x:s_time[i],
-                          y:s_vel[i],
-                          name: `Leg ${i}`,
-                          mode: 'lines',
-                          hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
-        vel_plot.data.push(temp_plot_def);
-
-        // Accel plot
-        temp_plot_def = { x:s_time[i],
-                          y:s_pos[i],
-                          name: `Leg ${i}`,
-                          mode: 'lines',
-                          hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
-        pos_plot.data.push(temp_plot_def);
-    }
 
     Plotly.redraw("jerk_plot")
     Plotly.redraw("accel_plot");
