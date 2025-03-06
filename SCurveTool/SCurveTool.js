@@ -708,35 +708,35 @@ class SCurve {
         [target_pos, target_vel, target_accel] = this.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
         let s_finished = this.finished();
 
-        // // check for change of leg on fast waypoint
-        // const time_to_destination = this.get_time_remaining();
-        // if (fast_waypoint 
-        //     && is_zero(next_leg.get_time_elapsed()) 
-        //     && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in()) 
-        //     && (this.position_sq >= 0.25 * this.track.length_squared())) {
+        // check for change of leg on fast waypoint
+        const time_to_destination = this.get_time_remaining();
+        if (fast_waypoint 
+            && is_zero(next_leg.get_time_elapsed()) 
+            && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in()) 
+            && (this.position_sq >= 0.25 * this.track.length_squared())) {
 
-        //     let turn_pos = new Vector();
-        //     turn_pos = turn_pos.subtract(this.track);
+            let turn_pos = new Vector();
+            turn_pos = turn_pos.subtract(this.track);
 
-        //     let turn_vel = new Vector();
-        //     let turn_accel = new Vector();
-        //     [turn_pos, turn_vel, turn_accel] = this.move_from_time_pos_vel_accel(get_time_elapsed() + time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
+            let turn_vel = new Vector();
+            let turn_accel = new Vector();
+            [turn_pos, turn_vel, turn_accel] = this.move_from_time_pos_vel_accel(this.get_time_elapsed() + time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
 
-        //     next_leg.move_from_time_pos_vel_accel(time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
-        //     const speed_min = Math.min(this.get_speed_along_track(), next_leg.get_speed_along_track());
-        //     if ((this.get_time_remaining() < next_leg.time_end() * 0.5) && (turn_pos.length() < wp_radius) &&
-        //         (new Vector(turn_vel.x, turn_vel.y, 0.0).length() < speed_min) &&
-        //         (new Vector(turn_accel.x, turn_accel.y, 0.0).length() < accel_corner))
-        //         {
-        //         next_leg.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
-        //     }
+            next_leg.move_from_time_pos_vel_accel(time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
+            const speed_min = Math.min(this.get_speed_along_track(), next_leg.get_speed_along_track());
+            if ((this.get_time_remaining() < next_leg.time_end() * 0.5) && (turn_pos.length() < wp_radius) &&
+                (new Vector(turn_vel.x, turn_vel.y, 0.0).length() < speed_min) &&
+                (new Vector(turn_accel.x, turn_accel.y, 0.0).length() < accel_corner))
+                {
+                next_leg.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
+            }
 
-        // } else if (!is_zero(next_leg.get_time_elapsed())) {
-        //     [target_pos, target_vel, target_accel] = next_leg.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
-        //     if (next_leg.get_time_elapsed() >= this.get_time_remaining()) {
-        //         s_finished = true;
-        //     }
-        // }
+        } else if (!is_zero(next_leg.get_time_elapsed())) {
+            [target_pos, target_vel, target_accel] = next_leg.move_from_pos_vel_accel(dt, target_pos, target_vel, target_accel);
+            if (next_leg.get_time_elapsed() >= this.get_time_remaining()) {
+                s_finished = true;
+            }
+        }
 
         return [s_finished, prev_leg, next_leg, target_pos, target_vel, target_accel];
     }
@@ -1202,22 +1202,24 @@ class WPNav {
         target_pos = this.origin;
         [s_finished, this.scurve_prev_leg, this.scurve_next_leg, target_pos, target_vel, target_accel] = this.scurve_this_leg.advance_target_along_track(this.scurve_prev_leg, this.scurve_next_leg, this.wp_radius_cm, this.scurve_accel_corner, this.flags.fast_waypoint, this.track_scalar_dt * dt, target_pos, target_vel, target_accel);
 
+        // We are just moving through targets in this tool, so our "current position" is just the current target
+        let curr_pos = target_pos;
 
-        // // check if we've reached the waypoint
-        // if (!this.flags.reached_destination) {
-        //     if (s_finished) {
-        //         // "fast" waypoints are complete once the intermediate point reaches the destination
-        //         if (this.flags.fast_waypoint) {
-        //             this.flags.reached_destination = true;
-        //         } else {
-        //             // regular waypoints also require the copter to be within the waypoint radius
-        //             const dist_to_dest = curr_pos - _destination;
-        //             if (dist_to_dest.length_squared() <= sq(_wp_radius_cm)) {
-        //                 _flags.reached_destination = true;
-        //             }
-        //         }
-        //     }
-        // }
+        // check if we've reached the waypoint
+        if (!this.flags.reached_destination) {
+            if (s_finished) {
+                // "fast" waypoints are complete once the intermediate point reaches the destination
+                if (this.flags.fast_waypoint) {
+                    this.flags.reached_destination = true;
+                } else {
+                    // regular waypoints also require the copter to be within the waypoint radius
+                    const dist_to_dest = curr_pos.subtract(this.destination);
+                    if (dist_to_dest.length_squared() <= this.wp_radius_cm**2) {
+                        this.flags.reached_destination = true;
+                    }
+                }
+            }
+        }
 
         // successfully advanced along track
         return [target_pos, target_vel, target_accel];
