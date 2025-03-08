@@ -22,9 +22,14 @@ function initial_load()
                           line: { width: 10,
                                   color: [1], // Coloring based on Z values
                                   colorscale: "Viridis", // Color gradient
-                                  colorbar: { title: "Vel Magnitude" }
-                                }
-                         }];
+                                  colorbar: { title: "Vel Magnitude",
+                                              len: 0.75,
+                                              thickness: 40
+                                            }
+                                },
+                          missionLeg: 0 // A custom attribute that we can use to see what leg we are on in a callback
+                         }
+                        ];
 
     wp_pos_plot.layout = {
         legend: { itemclick: false, itemdoubleclick: false },
@@ -39,6 +44,13 @@ function initial_load()
     plot = document.getElementById("waypoint_plot")
     Plotly.purge(plot)
     Plotly.newPlot(plot, wp_pos_plot.data, wp_pos_plot.layout, { displaylogo: false })
+
+    // Attach event listener for line clicks
+    plot.on("plotly_click", function (data) {
+        let point = data.points[0]; // Get first selected point
+        let mission_leg = point.data.missionLeg;
+        console.log(`Clicked on (${point.x}, ${point.y}) in ${point.data.name}, on leg: ${mission_leg}`);
+    });
 
     // Snap
     snap_plot.data = [];
@@ -729,12 +741,12 @@ class SCurve {
         // check for change of leg on fast waypoint
         const time_to_destination = this.get_time_remaining();
         if (fast_waypoint 
-            && is_zero(next_leg.get_time_elapsed()) 
-            && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in()) 
-            && (this.position_sq >= 0.25 * this.track.length_squared())) {
+            && is_zero(next_leg.get_time_elapsed()) // the next leg has not started
+            && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in())  // time current leg >= time at end of const velocity, current leg - time at next leg aftern initial + acceleration phase 
+            && (this.position_sq >= 0.25 * this.track.length_squared())) { // we have travelled more than half of the current leg, (0.5^2 = 0.25)
 
             let turn_pos = new Vector();
-            turn_pos = turn_pos.subtract(this.track);
+            turn_pos = turn_pos.subtract(this.track); // negative track vector
 
             let turn_vel = new Vector();
             let turn_accel = new Vector();
@@ -832,13 +844,13 @@ class SCurve {
         accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
 
         // update logging
-        this.logger.wp_number.push(this.wp_number);
-        this.logger.time.push(time_now);
-        this.logger.pos.push(scurve_P1*0.01);
-        this.logger.vel.push(scurve_V1*0.01);
-        this.logger.accel.push(scurve_A1*0.01);
-        this.logger.jerk.push(scurve_J1*0.01);
-        this.logger.snap.push(this.St*0.01);
+        // this.logger.wp_number.push(this.wp_number);
+        // this.logger.time.push(time_now);
+        // this.logger.pos.push(scurve_P1*0.01);
+        // this.logger.vel.push(scurve_V1*0.01);
+        // this.logger.accel.push(scurve_A1*0.01);
+        // this.logger.jerk.push(scurve_J1*0.01);
+        // this.logger.snap.push(this.St*0.01);
 
         return [pos, vel, accel];
     }
@@ -1222,7 +1234,7 @@ class WPNav {
         }
 
         this.scurve_next_leg.init(this.wp_number+1);
-        this.flags.fast_waypoint = false;//false;   // default waypoint back to slow
+        this.flags.fast_waypoint = true;//false;   // default waypoint back to slow
         this.flags.reached_destination = false;
 
         return true; // we can't actually fail this as we don't handle terrain tailes in this js version
@@ -1473,11 +1485,46 @@ class Vector {
     }
 }
 
+// A class to store the kinematic targets for the s-curves at each leg
+// This data can then be recalled when plotting the various s-curves
+class SCcurve_Log {
+    constructor() {
+        this.snap = [];
+        this.jerk = [];
+        this.accel = [];
+        this.vel = [];
+        this.pos = [];
+        this.time = [];
+    }
+}
+
+
+class SCurveHistory {
+    constructor() {
+        this.reset();
+    }
+
+    reset() {
+        this.prev = [];
+        this.current = [];
+        this.next = [];
+        this.leg_number = [];
+    }
+
+}
+
+// function reset_s_curve_history() {
+//     s_curve_history = {prev:[], current:[], next:[], leg_number:[]};
+// }
+let s_curve_history = new SCurveHistory();
 
 function update()
 {
     // reset all of the plots 
     initial_load();
+
+    // reset stored data history
+    s_curve_history.reset();
 
     let point1 = new Vector(parseFloat(document.getElementById("first_wp_x").value),
                             parseFloat(document.getElementById("first_wp_y").value),
@@ -1500,7 +1547,7 @@ function update()
     let point3_cm = point3.scaler_multiply(100.0)
     let point4_cm = point4.scaler_multiply(100.0)
 
-    // construct "waypoint nav", giving it a starting location.
+    // start an instance that emulates the wpnav interface
     let wp_nav = new WPNav()
 
     // wp_start()
@@ -1512,7 +1559,7 @@ function update()
     // now in wp_run()
     let t = 0.0;
     const dt = 1/50;
-    const T = 100;
+    const T = 1000;
     const n_steps = Math.floor(T/dt);
     let pos_targ = [];
     let vel_targ = [];
@@ -1530,49 +1577,20 @@ function update()
 
         if (wp_nav.flags.reached_destination) {
 
-            // Jerk plot
-            let temp_plot_def = { x:time.slice(last_sc_point),
-                                  y:wp_nav.scurve_this_leg.logger.snap.slice(last_sc_point),
-                                  name: `Leg ${wp_index-1}`,
-                                  mode: 'lines',
-                                  hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s⁴" };
-            snap_plot.data.push(temp_plot_def);
+            // Store the scurves in wpnav logging so that they can be recalled and plotted when each leg is clicked on
+            let temp_log = new SCcurve_Log();
+            temp_log.time = time.slice(last_sc_point);
+            temp_log.snap = wp_nav.scurve_this_leg.logger.snap.slice(last_sc_point);
+            temp_log.jerk = wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point);
+            temp_log.accel = wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point);
+            temp_log.vel = wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point);
+            temp_log.pos = wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point);
 
-            // Jerk plot
-            temp_plot_def = { x:time.slice(last_sc_point),
-                              y:wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point),
-                              name: `Leg ${wp_index-1}`,
-                              mode: 'lines',
-                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
-            jerk_plot.data.push(temp_plot_def);
+            s_curve_history.current.push(temp_log);
+            s_curve_history.leg_number.push(wp_index - 1);
 
-            // Accel plot
-            temp_plot_def = { x:time.slice(last_sc_point),
-                              y:wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point),
-                              name: `Leg ${wp_index-1}`,
-                              mode: 'lines',
-                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
-            accel_plot.data.push(temp_plot_def);
-
-            // Vel plot
-            temp_plot_def = { x:time.slice(last_sc_point),
-                              y:wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point),
-                              name: `Leg ${wp_index-1}`,
-                              mode: 'lines',
-                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
-            vel_plot.data.push(temp_plot_def);
-
-            // Accel plot
-            temp_plot_def = { x:time.slice(last_sc_point),
-                              y:wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point),
-                              name: `Leg ${wp_index-1}`,
-                              mode: 'lines',
-                              hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
-            pos_plot.data.push(temp_plot_def);
-
-            // store the last index from the prior s-curve so we know how to split up the next s-curve
+            // Store the last index from the prior s-curves so we know how to split up the next s-curve
             last_sc_point = wp_nav.scurve_this_leg.logger.jerk.length-1;
-
 
             // Check for loading next waypoints
             if (wp_index == 2) {
@@ -1607,12 +1625,93 @@ function update()
 
     Plotly.redraw("waypoint_plot")
 
-    Plotly.redraw("snap_plot")
+    plot_scurves([1,2,3], false);
+
+}
+
+// plot_all_curves: True = plot prev, current, and next scurves. False = plot only current.
+function plot_scurves(mission_leg, plot_all_curves)
+{
+    // Cycle through all desired mission legs to plot
+    for (let i = 0; i < mission_leg.length; i++) {
+
+        const leg = mission_leg[i];
+
+        // cycle through all available mission legs to find the scurces that we need to plot
+        for (let j = 0; j < s_curve_history.leg_number.length; j++) {
+
+            if (s_curve_history.leg_number[j] != leg) {
+                continue;
+            }
+
+            let temp_plot_def;
+
+            // Snap plot
+            // Last leg
+
+            // current leg
+            temp_plot_def = { x:s_curve_history.current[j].time,
+                            y:s_curve_history.current[j].snap,
+                            name: `Leg ${leg}`,
+                            mode: 'lines',
+                            hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s⁴" };
+
+            snap_plot.data.push(temp_plot_def);
+
+            if (!snap_plot.layout) {
+                console.warn("snap_plot.layout is undefined! Initializing default layout.");
+                snap_plot.layout = {
+                    title: "Snap Plot",
+                    xaxis: { title: "Time (s)" },
+                    yaxis: { title: "Snap (m/s⁴)" }
+                };
+            }
+
+    // // Jerk plot
+    // temp_plot_def = { x:time.slice(last_sc_point),
+    //     y:wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point),
+    //     name: `Leg ${wp_index-1}`,
+    //     mode: 'lines',
+    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
+    // jerk_plot.data.push(temp_plot_def);
+
+    // // Accel plot
+    // temp_plot_def = { x:time.slice(last_sc_point),
+    //     y:wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point),
+    //     name: `Leg ${wp_index-1}`,
+    //     mode: 'lines',
+    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
+    // accel_plot.data.push(temp_plot_def);
+
+    // // Vel plot
+    // temp_plot_def = { x:time.slice(last_sc_point),
+    //     y:wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point),
+    //     name: `Leg ${wp_index-1}`,
+    //     mode: 'lines',
+    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
+    // vel_plot.data.push(temp_plot_def);
+
+    // // Accel plot
+    // temp_plot_def = { x:time.slice(last_sc_point),
+    //     y:wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point),
+    //     name: `Leg ${wp_index-1}`,
+    //     mode: 'lines',
+    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
+    // pos_plot.data.push(temp_plot_def);
+    // }
+
+            }
+        }
+
+    plot = document.getElementById("snap_plot")
+    Plotly.purge(plot)
+    // Plotly.redraw("snap_plot")
+    Plotly.newPlot("snap_plot", snap_plot.data, snap_plot.layout);
+
     Plotly.redraw("jerk_plot")
     Plotly.redraw("accel_plot");
     Plotly.redraw("vel_plot");
     Plotly.redraw("pos_plot");
 
 }
-
 
