@@ -10,7 +10,6 @@ snap_plot = {}
 wp_pos_plot = {}
 function initial_load()
 {
-    const time_scale_label = "Time (s)";
     let plot;
 
     // Waypoints
@@ -27,7 +26,7 @@ function initial_load()
                                               thickness: 40
                                             }
                                 },
-                          missionLeg: 0 // A custom attribute that we can use to see what leg we are on in a callback
+                          missionLeg: [] // A custom attribute that we can use to see what leg we are on in a callback
                          }
                         ];
 
@@ -47,10 +46,21 @@ function initial_load()
 
     // Attach event listener for line clicks
     plot.on("plotly_click", function (data) {
+        let selected_pt = data.points[0].pointNumber;
         let point = data.points[0]; // Get first selected point
-        let mission_leg = point.data.missionLeg;
-        console.log(`Clicked on (${point.x}, ${point.y}) in ${point.data.name}, on leg: ${mission_leg}`);
+        let mission_leg = point.data.missionLeg[selected_pt];
+        console.log(`Clicked on (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) in ${point.data.name}, on leg: ${mission_leg}`);
+
+        // plot the s-curves for the selected leg
+        plot_scurves([mission_leg], true);
     });
+
+    setup_kinematic_plots();
+}
+
+function setup_kinematic_plots() {
+
+    const time_scale_label = "Time (s)";
 
     // Snap
     snap_plot.data = [];
@@ -844,13 +854,13 @@ class SCurve {
         accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
 
         // update logging
-        // this.logger.wp_number.push(this.wp_number);
-        // this.logger.time.push(time_now);
-        // this.logger.pos.push(scurve_P1*0.01);
-        // this.logger.vel.push(scurve_V1*0.01);
-        // this.logger.accel.push(scurve_A1*0.01);
-        // this.logger.jerk.push(scurve_J1*0.01);
-        // this.logger.snap.push(this.St*0.01);
+        this.logger.wp_number.push(this.wp_number);
+        this.logger.time.push(time_now);
+        this.logger.pos.push(scurve_P1*0.01);
+        this.logger.vel.push(scurve_V1*0.01);
+        this.logger.accel.push(scurve_A1*0.01);
+        this.logger.jerk.push(scurve_J1*0.01);
+        this.logger.snap.push(this.St*0.01);
 
         return [pos, vel, accel];
     }
@@ -1487,18 +1497,6 @@ class Vector {
 
 // A class to store the kinematic targets for the s-curves at each leg
 // This data can then be recalled when plotting the various s-curves
-class SCcurve_Log {
-    constructor() {
-        this.snap = [];
-        this.jerk = [];
-        this.accel = [];
-        this.vel = [];
-        this.pos = [];
-        this.time = [];
-    }
-}
-
-
 class SCurveHistory {
     constructor() {
         this.reset();
@@ -1511,18 +1509,39 @@ class SCurveHistory {
         this.leg_number = [];
     }
 
+    save(time, last, curr, next, start_index, leg) {
+
+        // Previous s-curve
+        let data = this.get_store_obj(time, last, start_index);
+        this.prev.push(data);
+
+        // Current s-curve
+        data = this.get_store_obj(time, curr, start_index);
+        this.current.push(data);
+
+        // Next s-curve
+        data = this.get_store_obj(time, next, start_index);
+        this.next.push(data);
+
+        this.leg_number.push(leg);
+    }
+
+    get_store_obj(time, scurve, start_index) {
+        return {
+            time: time.slice(start_index),
+            snap: scurve.logger.snap.slice(start_index),
+            jerk: scurve.logger.jerk.slice(start_index),
+            accel: scurve.logger.accel.slice(start_index),
+            vel: scurve.logger.vel.slice(start_index),
+            pos: scurve.logger.pos.slice(start_index)
+        }
+    }
 }
 
-// function reset_s_curve_history() {
-//     s_curve_history = {prev:[], current:[], next:[], leg_number:[]};
-// }
 let s_curve_history = new SCurveHistory();
 
 function update()
 {
-    // reset all of the plots 
-    initial_load();
-
     // reset stored data history
     s_curve_history.reset();
 
@@ -1563,31 +1582,24 @@ function update()
     const n_steps = Math.floor(T/dt);
     let pos_targ = [];
     let vel_targ = [];
+    let mission_leg_track = [];
     let last_sc_point = 0;
     let time = [];
     let wp_index = 2;
     for (let i = 0; i < n_steps; i++) {
-        let [pos_cm, vel_cms, accel_cmss] = wp_nav.advance_wp_target_along_track(dt)
+        let [pos_cm, vel_cms, _] = wp_nav.advance_wp_target_along_track(dt)
 
         // logging 3D kinematics to add to the 3D plot
         t += dt;
         pos_targ.push(pos_cm.scaler_multiply(0.01));         // (m)
         vel_targ.push(vel_cms.scaler_multiply(0.01));        // (m/s)
+        mission_leg_track.push(wp_index - 1);
         time.push(t);
 
         if (wp_nav.flags.reached_destination) {
 
             // Store the scurves in wpnav logging so that they can be recalled and plotted when each leg is clicked on
-            let temp_log = new SCcurve_Log();
-            temp_log.time = time.slice(last_sc_point);
-            temp_log.snap = wp_nav.scurve_this_leg.logger.snap.slice(last_sc_point);
-            temp_log.jerk = wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point);
-            temp_log.accel = wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point);
-            temp_log.vel = wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point);
-            temp_log.pos = wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point);
-
-            s_curve_history.current.push(temp_log);
-            s_curve_history.leg_number.push(wp_index - 1);
+            s_curve_history.save(time, wp_nav.scurve_prev_leg, wp_nav.scurve_this_leg, wp_nav.scurve_next_leg, last_sc_point, wp_index - 1);
 
             // Store the last index from the prior s-curves so we know how to split up the next s-curve
             last_sc_point = wp_nav.scurve_this_leg.logger.jerk.length-1;
@@ -1620,6 +1632,7 @@ function update()
     wp_pos_plot.data[1].x = pos_targ.map(v => v.x);
     wp_pos_plot.data[1].y = pos_targ.map(v => v.y);
     wp_pos_plot.data[1].z = pos_targ.map(v => v.z);
+    wp_pos_plot.data[1].missionLeg = mission_leg_track;
     // colour the line based on velocity magnitude
     wp_pos_plot.data[1].line.color = vel_targ.map(v => v.length());
 
@@ -1632,6 +1645,9 @@ function update()
 // plot_all_curves: True = plot prev, current, and next scurves. False = plot only current.
 function plot_scurves(mission_leg, plot_all_curves)
 {
+    // reset all of the plots 
+    setup_kinematic_plots();
+
     // Cycle through all desired mission legs to plot
     for (let i = 0; i < mission_leg.length; i++) {
 
@@ -1646,68 +1662,58 @@ function plot_scurves(mission_leg, plot_all_curves)
 
             let temp_plot_def;
 
-            // Snap plot
-            // Last leg
+            let to_plot = [
+                // Snap
+                { prev: s_curve_history.prev[j].snap, curr: s_curve_history.current[j].snap, next: s_curve_history.next[j].snap, template: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s⁴", plot: snap_plot},
+                // Jerk
+                { prev: s_curve_history.prev[j].jerk, curr: s_curve_history.current[j].jerk, next: s_curve_history.next[j].jerk, template: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³", plot: jerk_plot},
+                // Accel
+                { prev: s_curve_history.prev[j].accel, curr: s_curve_history.current[j].accel, next: s_curve_history.next[j].accel, template: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²", plot: accel_plot},
+                // Vel
+                { prev: s_curve_history.prev[j].vel, curr: s_curve_history.current[j].vel, next: s_curve_history.next[j].vel, template: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s", plot: vel_plot},
+                // Pos
+                { prev: s_curve_history.prev[j].pos, curr: s_curve_history.current[j].pos, next: s_curve_history.next[j].pos, template: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m", plot: pos_plot}
+            ];
 
-            // current leg
-            temp_plot_def = { x:s_curve_history.current[j].time,
-                            y:s_curve_history.current[j].snap,
-                            name: `Leg ${leg}`,
-                            mode: 'lines',
-                            hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s⁴" };
 
-            snap_plot.data.push(temp_plot_def);
+            for (let k = 0; k < to_plot.length; k++) {
+                // Last leg
+                if (plot_all_curves) {
+                    temp_plot_def = { x: s_curve_history.prev[j].time,
+                        y: to_plot[k].prev,
+                        name: `Previous Leg ${leg}`,
+                        mode: 'lines',
+                        hovertemplate: to_plot[k].template };
+                    to_plot[k].plot.data.push(temp_plot_def);
+                }
 
-            if (!snap_plot.layout) {
-                console.warn("snap_plot.layout is undefined! Initializing default layout.");
-                snap_plot.layout = {
-                    title: "Snap Plot",
-                    xaxis: { title: "Time (s)" },
-                    yaxis: { title: "Snap (m/s⁴)" }
-                };
+                // Current leg
+                temp_plot_def = { x: s_curve_history.current[j].time,
+                                  y: to_plot[k].curr,
+                                  name: `Current Leg ${leg}`,
+                                  mode: 'lines',
+                                  hovertemplate: to_plot[k].template };
+                to_plot[k].plot.data.push(temp_plot_def);
+
+                // Next leg
+                if (plot_all_curves) {
+                    temp_plot_def = { x: s_curve_history.next[j].time,
+                        y: to_plot[k].next,
+                        name: `Next Leg ${leg}`,
+                        mode: 'lines',
+                        hovertemplate: to_plot[k].template };
+                    to_plot[k].plot.data.push(temp_plot_def);
+                }
             }
 
-    // // Jerk plot
-    // temp_plot_def = { x:time.slice(last_sc_point),
-    //     y:wp_nav.scurve_this_leg.logger.jerk.slice(last_sc_point),
-    //     name: `Leg ${wp_index-1}`,
-    //     mode: 'lines',
-    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s³" };
-    // jerk_plot.data.push(temp_plot_def);
 
-    // // Accel plot
-    // temp_plot_def = { x:time.slice(last_sc_point),
-    //     y:wp_nav.scurve_this_leg.logger.accel.slice(last_sc_point),
-    //     name: `Leg ${wp_index-1}`,
-    //     mode: 'lines',
-    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s²" };
-    // accel_plot.data.push(temp_plot_def);
 
-    // // Vel plot
-    // temp_plot_def = { x:time.slice(last_sc_point),
-    //     y:wp_nav.scurve_this_leg.logger.vel.slice(last_sc_point),
-    //     name: `Leg ${wp_index-1}`,
-    //     mode: 'lines',
-    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m/s" };
-    // vel_plot.data.push(temp_plot_def);
-
-    // // Accel plot
-    // temp_plot_def = { x:time.slice(last_sc_point),
-    //     y:wp_nav.scurve_this_leg.logger.pos.slice(last_sc_point),
-    //     name: `Leg ${wp_index-1}`,
-    //     mode: 'lines',
-    //     hovertemplate: "<extra></extra>%{x:.2f} s<br>%{y:.2f} m" };
-    // pos_plot.data.push(temp_plot_def);
-    // }
 
             }
         }
 
-    plot = document.getElementById("snap_plot")
-    Plotly.purge(plot)
-    // Plotly.redraw("snap_plot")
-    Plotly.newPlot("snap_plot", snap_plot.data, snap_plot.layout);
 
+    Plotly.redraw("snap_plot")
     Plotly.redraw("jerk_plot")
     Plotly.redraw("accel_plot");
     Plotly.redraw("vel_plot");
