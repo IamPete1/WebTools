@@ -1246,10 +1246,26 @@ class WPNav {
         }
 
         this.scurve_next_leg.init(this.wp_number+1);
-        this.flags.fast_waypoint = true;//false;   // default waypoint back to slow
+        this.flags.fast_waypoint = false;   // default waypoint back to slow
         this.flags.reached_destination = false;
 
         return true; // we can't actually fail this as we don't handle terrain tailes in this js version
+    }
+
+    /// set next destination using position vector (distance from ekf origin in cm)
+    ///     terrain_alt should be true if destination.z is a desired altitude above terrain
+    ///     provide next_destination
+    set_wp_destination_next(destination)
+    {
+        this.scurve_next_leg.calculate_track(this.destination, destination,
+                                        this.pos_control.get_max_speed_xy_cms(), this.pos_control.get_max_speed_up_cms(), this.pos_control.get_max_speed_down_cms(),
+                                        this.wp_accel_cmss, this.wp_accel_z_cmss,
+                                        this.scurve_snap * 100.0, this.scurve_jerk * 100.0);
+
+        // next destination provided so fast waypoint
+        this.flags.fast_waypoint = true;
+
+        return true;
     }
 
     /// advance_wp_target_along_track - move target location along track from origin to destination
@@ -1608,13 +1624,15 @@ function update()
 
             // Check for loading next waypoints
             if (wp_index == 2) {
-                wp_nav.set_wp_destination_loc(point3_cm);
+                // wp_nav.set_wp_destination_loc(point3_cm);
+                wp_nav.set_wp_destination_next(point3_cm);
                 wp_index += 1;
                 continue;
             }
 
             if (wp_index == 3) {
-                wp_nav.set_wp_destination_loc(point4_cm);
+                // wp_nav.set_wp_destination_loc(point4_cm);
+                wp_nav.set_wp_destination_next(point4_cm);
                 wp_index += 1;
                 continue;
             }
