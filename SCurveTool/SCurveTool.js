@@ -752,7 +752,7 @@ class SCurve {
         const time_to_destination = this.get_time_remaining();
         if (fast_waypoint 
             && is_zero(next_leg.get_time_elapsed()) // the next leg has not started
-            && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in())  // time current leg >= time at end of const velocity, current leg - time at next leg aftern initial + acceleration phase 
+            && (this.get_time_elapsed() >= this.time_turn_out() - next_leg.time_turn_in())  // time current leg >= time at end of const velocity, current leg - time at next leg after initial + acceleration phase .  current time is between end of const vel and before turn out accel is due to start
             && (this.position_sq >= 0.25 * this.track.length_squared())) { // we have travelled more than half of the current leg, (0.5^2 = 0.25)
 
             let turn_pos = new Vector();
@@ -760,9 +760,10 @@ class SCurve {
 
             let turn_vel = new Vector();
             let turn_accel = new Vector();
-            [turn_pos, turn_vel, turn_accel] = this.move_from_time_pos_vel_accel(this.get_time_elapsed() + time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
+            let time_test = this.get_time_elapsed() + time_to_destination * 0.5;
+            [turn_pos, turn_vel, turn_accel] = this.move_from_time_pos_vel_accel(this.get_time_elapsed() + time_to_destination * 0.5, turn_pos, turn_vel, turn_accel, false); // don't log here as we are computing the turn point needed for the next leg, not this one
 
-            next_leg.move_from_time_pos_vel_accel(time_to_destination * 0.5, turn_pos, turn_vel, turn_accel);
+            next_leg.move_from_time_pos_vel_accel(time_to_destination * 0.5, turn_pos, turn_vel, turn_accel, true);
             const speed_min = Math.min(this.get_speed_along_track(), next_leg.get_speed_along_track());
             if ((this.get_time_remaining() < next_leg.time_end() * 0.5) && (turn_pos.length() < wp_radius) &&
                 (new Vector(turn_vel.x, turn_vel.y, 0.0).length() < speed_min) &&
@@ -841,7 +842,7 @@ class SCurve {
     }
 
     // return the position, velocity and acceleration vectors relative to the origin at a specified time along the path
-    move_from_time_pos_vel_accel(time_now, pos, vel, accel)
+    move_from_time_pos_vel_accel(time_now, pos, vel, accel, log)
     {
         if (!(pos instanceof Vector) || !(vel instanceof Vector) || !(accel instanceof Vector)) {
             throw new Error("pos/vel/accel must be Vectors")
@@ -854,14 +855,15 @@ class SCurve {
         accel = accel.add(this.delta_unit.scaler_multiply(scurve_A1));
 
         // update logging
-        this.logger.wp_number.push(this.wp_number);
-        this.logger.time.push(time_now);
-        this.logger.pos.push(scurve_P1*0.01);
-        this.logger.vel.push(scurve_V1*0.01);
-        this.logger.accel.push(scurve_A1*0.01);
-        this.logger.jerk.push(scurve_J1*0.01);
-        this.logger.snap.push(this.St*0.01);
-
+        if (log) {
+            this.logger.wp_number.push(this.wp_number);
+            this.logger.time.push(time_now);
+            this.logger.pos.push(scurve_P1*0.01);
+            this.logger.vel.push(scurve_V1*0.01);
+            this.logger.accel.push(scurve_A1*0.01);
+            this.logger.jerk.push(scurve_J1*0.01);
+            this.logger.snap.push(this.St*0.01);
+        }
         return [pos, vel, accel];
     }
 
@@ -1129,7 +1131,7 @@ class WPNav {
 
         this.track_scalar_dt = 1.0;
 
-        this.flags = ({reached_destination: false, fast_waypoint: false, wp_yaw_set: false});
+        this.flags = {reached_destination: false, fast_waypoint: false, wp_yaw_set: false};
     }
 
 
