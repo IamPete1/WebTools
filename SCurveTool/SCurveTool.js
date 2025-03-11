@@ -1,6 +1,6 @@
 const M_PI = Math.PI;
 const M_2PI = M_PI * 2.0;
-const GRAVITY_MSS = 9.81;
+const GRAVITY_MSS = 9.80665;
 
 pos_plot = {}
 vel_plot = {}
@@ -52,7 +52,7 @@ function initial_load()
         console.log(`Clicked on (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) in ${point.data.name}, on leg: ${mission_leg}`);
 
         // plot the s-curves for the selected leg
-        plot_scurves([mission_leg], true);
+        //plot_scurves([mission_leg], true);
     });
 
     setup_kinematic_plots();
@@ -610,7 +610,7 @@ class SCurve {
 
             const exceed_amax = (Vm <= V0 + 2.0 * Am * tj); // ?????
             const exceed_vmax = (L <= 4.0 * V0 * tj + 4.0 * Am * tj**2); // ??????
-            if (exceed_vmax || exceed_vmax) {
+            if (exceed_amax || exceed_vmax) {
                 // solution = 0 - t6 t4 t2 = 0 0 0
                 t2_out = 0.0;
                 t4_out = 0.0;
@@ -760,7 +760,7 @@ class SCurve {
 
             let turn_vel = new Vector();
             let turn_accel = new Vector();
-            let time_test = this.get_time_elapsed() + time_to_destination * 0.5;
+            //let time_test = this.get_time_elapsed() + time_to_destination * 0.5;
             [turn_pos, turn_vel, turn_accel] = this.move_from_time_pos_vel_accel(this.get_time_elapsed() + time_to_destination * 0.5, turn_pos, turn_vel, turn_accel, false); // don't log here as we are computing the turn point needed for the next leg, not this one
 
             next_leg.move_from_time_pos_vel_accel(time_to_destination * 0.5, turn_pos, turn_vel, turn_accel, true);
@@ -1174,8 +1174,8 @@ class WPNav {
         this.flags.fast_waypoint = false;
 
         // initialise origin and destination to stopping point
-        this.origin = stopping_point;
-        this.destination = stopping_point;
+        this.origin = stopping_point.copy();
+        this.destination = stopping_point.copy();
 
         this.wp_number += 1;
     }
@@ -1222,13 +1222,13 @@ class WPNav {
         let origin_speed = 0.0;
 
         // use previous destination as origin
-        this.origin = this.destination;
+        this.origin = this.destination.copy();
 
         // In AP there is a buch of conversions and cases depending on alt frame and whether spline wp or not.
         // That stuff drops out in this simplified version.
 
         // update destination
-        this.destination = destination;
+        this.destination = destination.copy();
 
         if (this.flags.fast_waypoint && !this.scurve_next_leg.finished()) {
             // We have a fast WP so we can move onto the next leg without having finished the current scurve leg
@@ -1245,6 +1245,7 @@ class WPNav {
             }
         }
 
+        this.scurve_next_leg = new SCurve();
         this.scurve_next_leg.init(this.wp_number+1);
         this.flags.fast_waypoint = false;   // default waypoint back to slow
         this.flags.reached_destination = false;
@@ -1279,11 +1280,11 @@ class WPNav {
         let s_finished = false;
 
         // update target position, velocity and acceleration
-        target_pos = this.origin;
+        target_pos = this.origin.copy();
         [s_finished, this.scurve_prev_leg, this.scurve_next_leg, target_pos, target_vel, target_accel] = this.scurve_this_leg.advance_target_along_track(this.scurve_prev_leg, this.scurve_next_leg, this.wp_radius_cm, this.scurve_accel_corner, this.flags.fast_waypoint, this.track_scalar_dt * dt, target_pos, target_vel, target_accel);
 
         // We are just moving through targets in this tool, so our "current position" is just the current target
-        let curr_pos = target_pos;
+        let curr_pos = target_pos.copy();
 
         // check if we've reached the waypoint
         if (!this.flags.reached_destination) {
@@ -1459,6 +1460,10 @@ class Vector {
         this.z = z;
     }
 
+    copy() {
+        return new Vector(this.x, this.y, this.z);
+    }
+
     get_array() {
         return [this.x, this.y, this.z];
     }
@@ -1592,6 +1597,7 @@ function update()
     wp_nav.wp_and_spline_init(0.0, point1_cm);
 
     wp_nav.set_wp_destination_loc(point2_cm);
+    wp_nav.set_wp_destination_next(point3_cm);
 
     // now in wp_run()
     let t = 0.0;
@@ -1624,14 +1630,14 @@ function update()
 
             // Check for loading next waypoints
             if (wp_index == 2) {
-                // wp_nav.set_wp_destination_loc(point3_cm);
-                wp_nav.set_wp_destination_next(point3_cm);
+                wp_nav.set_wp_destination_loc(point3_cm);
+                wp_nav.set_wp_destination_next(point4_cm);
                 wp_index += 1;
                 continue;
             }
 
             if (wp_index == 3) {
-                // wp_nav.set_wp_destination_loc(point4_cm);
+                wp_nav.set_wp_destination_loc(point4_cm);
                 wp_nav.set_wp_destination_next(point4_cm);
                 wp_index += 1;
                 continue;
